@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny all unspecified document paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Diagnostic / Health Check ---
+    match /_healthCheck/{docId} {
+      allow read, write: if true;
+    }
+
+    // --- User Accounts ---
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // --- Pricing Packages ---
+    match /packages/{packageId} {
+      allow read, write: if true;
+    }
+
+    // --- System Configuration (QRIS, Contact, UI Theme, Memory, Priorities) ---
+    match /configs/{configId} {
+      allow read, write: if true;
+    }
+
+    // --- Payment Verification & Transactions ---
+    match /transactions/{transactionId} {
+      allow read, write: if true;
+    }
+
+    // --- Subscribers & Clients ---
+    match /clients/{clientId} {
+      allow read, write: if true;
+    }
+
+    // --- AI Generation History ---
+    match /history/{historyId} {
+      allow read, write: if true;
+    }
+
+    // --- Access Codes Repository ---
+    match /accessCodes/{codeId} {
+      allow read, write: if true;
+    }
+
+    // --- Announcements & Broadcasts ---
+    match /announcements/{announcementId} {
+      allow read, write: if true;
+    }
+
+    // --- Prompt Formulas ---
+    match /promptFormulas/{formulaId} {
+      allow read, write: if true;
+    }
+
+    // --- Affiliate & Referral System ---
+    match /affiliates/{affiliateId} {
+      allow read, write: if true;
+    }
+
+    // --- API Key Pool ---
+    match /apiKeys/{apiKeyId} {
+      allow read, write: if true;
+    }
+
+    // --- API Key Logs ---
+    match /apiKeyUsageLogs/{logId} {
+      allow read, write: if true;
+    }
+    match /apiKeyLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    // --- AI Agents Registry ---
+    match /aiAgents/{agentId} {
+      allow read, write: if true;
+    }
+
+    // --- Administrative Audit Logs ---
+    match /auditLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    // --- Self-Learning Pattern Queue ---
+    match /learningQueue/{queueId} {
+      allow read, write: if true;
+    }
+
+    // --- Video Taxonomy ---
+    match /categoryTaxonomy/{catId} {
+      allow read, write: if true;
+    }
+    match /categoryTaxonomyProposals/{proposalId} {
+      allow read, write: if true;
+    }
+
+    // --- Telemetry & Tracking Events ---
+    match /trackingEvents/{eventId} {
+      allow read, write: if true;
+    }
+
+    // --- Banned Devices Blacklist ---
+    match /bannedDevices/{deviceId} {
+      allow read, write: if true;
+    }
+
+    // --- Pending Schema Proposals ---
+    match /pendingSchemaChanges/{changeId} {
+      allow read, write: if true;
+    }
+
+    // --- Trend Videos ---
+    match /trend_videos/{videoId} {
+      allow read, write: if true;
+    }
+    match /trendVideos/{videoId} {
+      allow read, write: if true;
+    }
+  }
+}
