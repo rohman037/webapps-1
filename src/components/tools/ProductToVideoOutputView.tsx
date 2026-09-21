@@ -547,11 +547,6 @@ export const ProductToVideoOutputView: React.FC<ProductToVideoOutputViewProps> =
                               {clip.hookType}
                             </span>
                           )}
-                          {cIdx === 3 && (
-                            <span className="text-xs text-slate-400 font-normal">
-                              - Dioptimalkan untuk {targetAI.toUpperCase()}
-                            </span>
-                          )}
                         </div>
 
                         {/* b. Baris aksi: Ke Prompt Foto + Salin Prompt Klip */}
@@ -617,74 +612,14 @@ export const ProductToVideoOutputView: React.FC<ProductToVideoOutputViewProps> =
                         </div>
                       </div>
 
-                      {/* 7. Ringkasan Field Terpisah (Visual / Aksi / Voice Over grid) jika ada isinya */}
-                      {(clip.visual || clip.aksi || clip.voiceOver || clip.subteks) && (
-                        <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2 text-xs">
-                          {clip.visual && (
-                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-2">
-                              <span className="sm:col-span-2 font-semibold text-slate-600 flex items-center gap-1.5">
-                                <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>Visual</span>
-                              </span>
-                              <span className="sm:col-span-10 text-slate-800 leading-relaxed font-normal line-clamp-2">
-                                {clip.visual}
-                              </span>
-                            </div>
-                          )}
-
-                          {clip.aksi && (
-                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-2">
-                              <span className="sm:col-span-2 font-semibold text-slate-600 flex items-center gap-1.5">
-                                <Play className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>Aksi</span>
-                              </span>
-                              <span className="sm:col-span-10 text-slate-800 leading-relaxed font-normal">
-                                {clip.aksi}
-                              </span>
-                            </div>
-                          )}
-
-                          {(clip.voiceOver || clip.subteks) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-2">
-                              <span className="sm:col-span-2 font-semibold text-slate-600 flex items-center gap-1.5">
-                                <Mic className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>{clip.voiceOver ? 'Voice Over' : 'Subteks'}</span>
-                              </span>
-                              <span className="sm:col-span-10 text-slate-800 leading-relaxed italic">
-                                "{(clip.voiceOver || clip.subteks || '').replace(/^["'“]+|["'”]+$/g, '')}"
-                              </span>
-                            </div>
-                          )}
-
-                          {(clip.sound || clip.productionNote) && (
-                            <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-600">
-                              {clip.sound && (
-                                <div className="flex items-center gap-1.5">
-                                  <Volume2 className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span className="font-medium text-slate-500">Sound:</span>
-                                  <span>{clip.sound}</span>
-                                </div>
-                              )}
-                              {clip.productionNote && (
-                                <div className="flex items-center gap-1.5">
-                                  <Info className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span className="font-medium text-slate-500">Note:</span>
-                                  <span>{clip.productionNote}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
                       {/* c. Label kecil: MASTER PROMPT AI KLIP {id} (SIAP COPY) */}
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider pt-0.5">
-                        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-0.5">
+                        <Sparkles className="w-3 h-3 text-slate-400" />
                         <span>MASTER PROMPT AI KLIP {clip.id} (SIAP COPY)</span>
                       </div>
 
                       {/* d. Kotak konten: promptText (whitespace-pre-wrap) */}
-                      <div className="p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 text-sm leading-relaxed whitespace-pre-wrap select-text font-normal min-h-[90px]">
+                      <div className="p-4 sm:p-5 rounded-xl bg-[#f8fafc] border border-slate-100 text-slate-800 text-sm leading-relaxed whitespace-pre-wrap select-text font-normal min-h-[90px]">
                         {promptText}
                       </div>
                     </div>

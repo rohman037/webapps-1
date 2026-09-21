@@ -392,11 +392,6 @@ export const ViralReplicaOutputView: React.FC<ViralReplicaOutputViewProps> = ({
                         <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
                           {clip.timeRange}
                         </span>
-                        {cIdx === 3 && (
-                          <span className="text-xs text-slate-400 font-normal">
-                            - Dioptimalkan untuk {targetAI.toUpperCase()}
-                          </span>
-                        )}
                       </div>
 
                       <div className="flex items-center gap-2 self-end sm:self-auto">
