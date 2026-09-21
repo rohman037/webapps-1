@@ -4,7 +4,7 @@ import { runAutoAgentFactory } from '@/platform_intelligence/agents/agentAutoAge
 import { analyzeUserGrowth } from '@/platform_intelligence/agents/agentUserGrowthAnalyst';
 import { optimizeCostAndTiers } from '@/platform_intelligence/agents/agentCostTierOptimizer';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 let cronInitialized = false;
 

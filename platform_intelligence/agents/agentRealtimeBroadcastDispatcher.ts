@@ -18,7 +18,7 @@ export async function dispatchRealtimeBroadcast(
     const isNode = typeof window === 'undefined' && typeof process !== 'undefined';
     if (isNode) {
       // Server-side: use Firebase Admin SDK
-      const { adminDb } = await import('../lib/firebase-admin');
+      const { adminDb } = await import('@/src/lib/firebase-admin');
       if (adminDb && typeof adminDb.collection === 'function') {
         await adminDb.collection('live_state').doc(eventType).set({
           payload,
@@ -28,7 +28,7 @@ export async function dispatchRealtimeBroadcast(
       }
     } else {
       // Client-side: use Client Firebase SDK
-      const { db } = await import('../lib/firebase');
+      const { db } = await import('@/src/lib/firebase');
       const { doc, setDoc } = await import('firebase/firestore');
       if (db) {
         const docRef = doc(db, 'live_state', eventType);

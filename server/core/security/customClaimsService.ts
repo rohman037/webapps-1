@@ -1,5 +1,5 @@
 import { adminAuth, adminDb } from '@/src/lib/firebase-admin';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export type UserRole = 'owner' | 'admin' | 'moderator' | 'premium' | 'user';
 

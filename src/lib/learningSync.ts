@@ -19,6 +19,7 @@ export interface LearningEvent {
     | 'prompt_clip_copied'
     | 'prompt_sent_to_photo'
     | 'seo_caption_copied'
+    | 'caption_copied'
     | 'hashtags_copied'
     | 'tiktok_link_imported';
   payload: Record<string, any>;

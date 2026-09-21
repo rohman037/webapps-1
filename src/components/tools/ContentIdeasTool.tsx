@@ -1498,7 +1498,7 @@ export default function ContentIdeasTool({
               rawResult={rawResult}
               targetAI={targetAI}
               segmentDuration={segmentDuration}
-              maxDuration={maxDuration}
+              maxDuration={Number(maxDuration) || 60}
               refImageFile={refImageFile}
               onSendToPhotoPrompt={onSendToPhotoPrompt}
               onOpenBatchPhotoModal={(data) => {

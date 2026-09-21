@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdminRole } from '@/src/middleware/auth';
+import { requireAuth, requireAdminRole } from '@/server/middleware/auth.middleware';
 import {
   getSystemMemoryController,
   getGrowthStateController,

@@ -9,7 +9,7 @@ import {
   broadcastLiveEvent,
   recordExecutionAndUpgrade,
 } from '@/server/core/state/serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function loadEventsService() {
   return await dbGetTrackingEvents();

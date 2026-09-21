@@ -2,7 +2,7 @@ import { Request } from 'express';
 import { dbAddAuditLog, dbGetAuditLogs } from '@/src/db/dbService';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
 import { AuditLogItem } from '@/src/types';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export type AuditCategory = 'auth' | 'admin' | 'payment' | 'apikey' | 'api_usage' | 'security' | 'system';
 

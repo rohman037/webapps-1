@@ -1,9 +1,9 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { buildContentGeneratorPrompt } from '../prompts/content-generator';
 import { ContentGeneratorInput, ContentGeneratorOutput } from '../types';
-import { isNewClipFormat } from '../validator';
+import { isNewClipFormat } from '../validators/output-validator';
 
 export async function generateShopContent(input: ContentGeneratorInput): Promise<ContentGeneratorOutput> {
   const {
@@ -23,7 +23,7 @@ export async function generateShopContent(input: ContentGeneratorInput): Promise
     clientAccessCode,
   } = input;
 
-  logger.info(`[content-generator-agent] Generating ${totalIdeas} TikTok Shop video ideas | tier=tier2`);
+  logger.info(`[content-generator] Generating ${totalIdeas} TikTok Shop video ideas | tier=tier2`);
 
   const { finalPrompt, systemInstruction } = buildContentGeneratorPrompt({
     totalIdeas,
@@ -77,7 +77,7 @@ export async function generateShopContent(input: ContentGeneratorInput): Promise
 
   if (isMissingStructure) {
     logger.warn(
-      '[content-generator-agent] Output kurang lengkap atau format tidak sesuai klip, mencoba retry 1x...'
+      '[content-generator] Output kurang lengkap atau format tidak sesuai klip, mencoba retry 1x...'
     );
     try {
       const retryPayload = {
@@ -115,10 +115,10 @@ Do not omit labels. Do not merge into one paragraph without labels.`,
       if (retryResult?.text && retryResult.text.length > 250) {
         geminiResult = retryResult;
         currentGeneratedText = retryResult.text;
-        logger.info('[content-generator-agent] Retry berhasil mendapatkan output.');
+        logger.info('[content-generator] Retry berhasil mendapatkan output.');
       }
     } catch (retryErr) {
-      logger.warn('[content-generator-agent] Retry gagal, menggunakan output awal:', retryErr);
+      logger.warn('[content-generator] Retry gagal, menggunakan output awal:', retryErr);
     }
 
     if (!isNewClipFormat(currentGeneratedText)) {
@@ -131,4 +131,36 @@ Do not omit labels. Do not merge into one paragraph without labels.`,
     modelUsed: geminiResult?.modelUsed || userSelectedModel,
     isFormatFlawed,
   };
+}
+
+export async function generateContent(params: {
+  identityAnchor?: string | null;
+  enrichedInfo?: any;
+  keywordIntent?: any;
+  settings?: any;
+  productDetails?: string;
+  referenceImageBase64?: string;
+  referenceImageMimeType?: string;
+  model?: string;
+  customApiKey?: string;
+  clientAccessCode?: string;
+}): Promise<string> {
+  const result = await generateShopContent({
+    totalIdeas: params.settings?.totalIdeas || 5,
+    maxSecNum: params.settings?.maxSecNum || 30,
+    segSecNum: params.settings?.segSecNum || 3,
+    expectedClipsCount: params.settings?.expectedClipsCount || 10,
+    identityAnchorDescription: params.identityAnchor || '',
+    enrichedInfo: params.enrichedInfo?.enrichedInfo || '',
+    productDetails: params.productDetails || '',
+    classifiedKeywords: params.keywordIntent?.classifiedKeywords || [],
+    ideasHookAssignments: params.keywordIntent?.ideasHookAssignments || [],
+    referenceImageBase64: params.referenceImageBase64,
+    referenceImageMimeType: params.referenceImageMimeType,
+    model: params.model,
+    customApiKey: params.customApiKey,
+    clientAccessCode: params.clientAccessCode,
+  });
+
+  return result.text;
 }

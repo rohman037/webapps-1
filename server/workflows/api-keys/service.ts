@@ -15,7 +15,7 @@ import {
 } from '@/server/core/llm/routing/modelRouter';
 import { isRealApiKey, maskApiKeyStr, getGeminiClient } from '@/server/core/llm/keyUtils';
 import { recordAuditLog } from '@/server/core/security/auditLogService';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function getApiKeysService(maskForClient: boolean = true) {
   const keys = await dbGetApiKeys();

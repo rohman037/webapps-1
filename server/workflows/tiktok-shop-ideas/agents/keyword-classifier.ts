@@ -1,6 +1,6 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { buildKeywordClassifierPrompt } from '../prompts/keyword-intent';
 import { KeywordClassifierInput, KeywordClassifierOutput, KeywordSeed, IdeaHookAssignment } from '../types';
 
@@ -12,15 +12,20 @@ const fallbackHookTypes: ('Result-first' | 'Pain-point' | 'Suspense-thinking' | 
   'Result-first',
 ];
 
-export async function classifyKeywordIntent(input: KeywordClassifierInput): Promise<KeywordClassifierOutput> {
-  const { derivedProductName, productDetails, enrichedInfo, totalIdeas, model, customApiKey, clientAccessCode } =
-    input;
+export async function classifyKeywordIntent(input: KeywordClassifierInput | any): Promise<KeywordClassifierOutput> {
+  const derivedProductName = input.derivedProductName || input.enrichedProductName || 'Produk TikTok Shop';
+  const productDetails = input.productDetails || '';
+  const enrichedInfo = typeof input.enrichedInfo === 'string' ? input.enrichedInfo : (input.enrichedInfo?.enrichedInfo || '');
+  const totalIdeas = input.totalIdeas || 5;
+  const model = input.model;
+  const customApiKey = input.customApiKey;
+  const clientAccessCode = input.clientAccessCode;
 
   let classifiedKeywords: KeywordSeed[] = [];
   let ideasHookAssignments: IdeaHookAssignment[] = [];
 
   try {
-    logger.info('[keyword-classifier-agent] Classifying keyword intent & hook assignments | tier=tier3');
+    logger.info('[keyword-classifier] Classifying keyword intent & hook assignments | tier=tier3');
     const prompt = buildKeywordClassifierPrompt(derivedProductName, productDetails, enrichedInfo, totalIdeas);
     const keywordPayload = {
       contents: {
@@ -49,7 +54,7 @@ export async function classifyKeywordIntent(input: KeywordClassifierInput): Prom
       }
     }
   } catch (keywordErr) {
-    logger.warn('[keyword-classifier-agent] Keyword Intent AI failed, using fallback:', keywordErr);
+    logger.warn('[keyword-classifier] Keyword Intent AI failed, using fallback:', keywordErr);
   }
 
   if (classifiedKeywords.length < 4) {

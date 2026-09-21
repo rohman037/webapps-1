@@ -82,3 +82,17 @@ export interface AccessCodeItem {
   note: string;
   createdAt: number;
 }
+
+export interface AuditLogItem {
+  id: string;
+  adminName: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  category?: 'package' | 'client' | 'apikey' | 'qris' | 'system' | 'auth' | 'admin' | 'payment' | 'api_usage' | 'security' | string;
+  actor?: string;
+  clientIp?: string;
+  userAgent?: string;
+  metadata?: Record<string, any>;
+}
+

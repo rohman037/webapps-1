@@ -1,15 +1,95 @@
-import { sanitizeCaptionsAndHashtags } from '@/server/core/utils/sanitizer';
+import { sanitizeCaptionsAndHashtags } from '@/server/workflows/shared/sanitizer';
 import { recordExecutionAndUpgrade } from '@/server/core/state/serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { GenerateTikTokShopIdeasOptions } from './types';
-import { extractIdentityAnchor } from './agents/identity-anchor-agent';
-import { enrichProductLink } from './agents/link-enricher-agent';
-import { classifyKeywordIntent } from './agents/keyword-classifier-agent';
-import { generateShopContent } from './agents/content-generator-agent';
-import { refineShopCopy } from './agents/copy-refiner-agent';
-import { validateShopIdeasOutput, isNewClipFormat } from './validators/quality-validator';
+import { extractIdentityAnchor, analyzeIdentityAnchor } from './agents/identity-anchor';
+import { enrichProductLink } from './agents/link-enricher';
+import { classifyKeywordIntent } from './agents/keyword-classifier';
+import { generateShopContent, generateContent } from './agents/content-generator';
+import { refineShopCopy, refineCopy } from './agents/copy-refiner';
+import { validateOutput, validateShopIdeasOutput, isNewClipFormat } from './validators/output-validator';
 
 export * from './types';
+export {
+  analyzeIdentityAnchor,
+  enrichProductLink,
+  classifyKeywordIntent,
+  generateContent,
+  refineCopy,
+  validateOutput,
+};
+
+export async function runTikTokShopIdeasPipeline(input: any) {
+  const shopUrl = input?.shopUrl || input?.url || '';
+  const referenceImageBase64 = input?.referenceImageBase64 || '';
+  const referenceImageMimeType = input?.referenceImageMimeType || 'image/jpeg';
+  const settings = input?.settings || {
+    totalIdeas: input?.numIdeas || 3,
+    maxSecNum: parseInt(input?.totalDuration || '60', 10),
+    segSecNum: parseInt(input?.promptSplitSec || '6', 10) || 6,
+    expectedClipsCount: Math.ceil(
+      (parseInt(input?.totalDuration || '60', 10) || 60) /
+      (parseInt(input?.promptSplitSec || '6', 10) || 6)
+    ),
+  };
+
+  // CALL 1: Identity Anchor (conditional)
+  const identityAnchor = referenceImageBase64
+    ? await analyzeIdentityAnchor(
+        referenceImageBase64,
+        referenceImageMimeType,
+        input?.model,
+        input?.customApiKey,
+        input?.clientAccessCode
+      )
+    : null;
+
+  // CALL 2: Link Enrichment
+  const enrichedInfo = await enrichProductLink(shopUrl);
+
+  // CALL 3: Keyword Intent
+  const keywordIntent = await classifyKeywordIntent({
+    derivedProductName: enrichedInfo.enrichedProductName || input?.productDetails || 'Produk TikTok Shop',
+    productDetails: input?.productDetails || '',
+    enrichedInfo: enrichedInfo.enrichedInfo,
+    totalIdeas: settings.totalIdeas || 3,
+    model: input?.model,
+    customApiKey: input?.customApiKey,
+    clientAccessCode: input?.clientAccessCode,
+  });
+
+  // CALL 4: Content Generator
+  const output = await generateContent({
+    identityAnchor,
+    enrichedInfo,
+    keywordIntent,
+    settings,
+    productDetails: input?.productDetails,
+    referenceImageBase64,
+    referenceImageMimeType,
+    model: input?.model,
+    customApiKey: input?.customApiKey,
+    clientAccessCode: input?.clientAccessCode,
+  });
+
+  // Validator
+  const validation = validateOutput(output, enrichedInfo, Boolean(identityAnchor));
+
+  // CALL 5: Copy Refiner (conditional)
+  const final = validation.needsRefine
+    ? await refineCopy(output, validation, input?.model, input?.customApiKey, input?.clientAccessCode)
+    : output;
+
+  const sanitized = sanitizeCaptionsAndHashtags(final);
+
+  return {
+    markdown: sanitized,
+    result: sanitized,
+    text: sanitized,
+    validation,
+    enrichedInfo,
+  };
+}
 
 export async function generateTikTokShopIdeasService(options: GenerateTikTokShopIdeasOptions) {
   const {

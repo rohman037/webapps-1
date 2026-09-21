@@ -7,7 +7,7 @@ import {
   sseClients,
 } from '@/server/core/state/serverState';
 import { generateContentIdeasService } from './service';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function generateContentIdeasController(req: Request, res: Response) {
   const clientAccessCode = extractClientAccessCode(req);

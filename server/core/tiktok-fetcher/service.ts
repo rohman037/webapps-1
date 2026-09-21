@@ -1,4 +1,4 @@
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export const tiktokCache = new Map<string, { timestamp: number; data: any }>();
 export const TIKTOK_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes

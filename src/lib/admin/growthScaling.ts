@@ -220,9 +220,10 @@ export function evaluateGrowthAndScale(
 /**
  * Rollback system parameter configuration to a specified version in history
  */
-export function rollbackGrowthScalingVersion(targetVersion: number): GrowthScalingState {
+export function rollbackGrowthScalingVersion(targetVersion: number | string): GrowthScalingState {
   const current = getGrowthScalingState();
-  const targetHistory = current.history.find((h) => h.version === targetVersion);
+  const targetNum = typeof targetVersion === 'number' ? targetVersion : parseInt(String(targetVersion), 10);
+  const targetHistory = current.history.find((h) => h.version === targetNum);
 
   if (!targetHistory) {
     throw new Error(`Versi konfigurasi ${targetVersion} tidak ditemukan dalam riwayat.`);

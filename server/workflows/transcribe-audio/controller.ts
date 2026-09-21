@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { extractClientAccessCode } from '@/server/core/state/serverState';
 import { transcribeAudioService } from './service';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function transcribeAudioController(req: Request, res: Response) {
   try {

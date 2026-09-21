@@ -12,7 +12,7 @@ import {
   updateActiveStatusService,
   createNewEventService,
 } from './service';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function streamEventsController(req: Request, res: Response) {
   const token = (req.query.token as string) || 'GUEST-ACCESS';

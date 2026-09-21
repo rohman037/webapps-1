@@ -18,6 +18,15 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@/server/*": [
+        "./server/*"
+      ],
+      "@/src/*": [
+        "./src/*"
+      ],
+      "@/config/*": [
+        "./config/*"
       ]
     },
     "allowImportingTsExtensions": true,

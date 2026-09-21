@@ -1,7 +1,7 @@
 import { dbGetSystemMemory, dbSaveSystemMemory } from '@/src/db/dbService';
 import { dispatchRealtimeBroadcast } from '@/platform_intelligence/agents/agentRealtimeBroadcastDispatcher';
 import { registerExecutionUpgradeHandler } from './serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export interface SystemMemory {
   totalExecutions: number;

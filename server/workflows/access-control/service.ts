@@ -31,7 +31,7 @@ import {
   activePresenceSessions,
 } from '@/server/core/security/presence';
 import { AuditLogItem } from '@/src/types';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 // --- PACKAGES SERVICE ---
 export async function getPackagesService() {

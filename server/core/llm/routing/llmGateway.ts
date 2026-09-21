@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { dbGetApiKeys, dbSaveApiKeys, dbAddApiKeyLog, dbGetModelPriorities } from '@/src/db/dbService';
 import { getAntiLimitConfig } from '@/src/lib/antiLimit';
 import {
@@ -737,7 +737,7 @@ export class LLMGateway {
       const currentModelsToTry = candidateModels.filter(m => !LLMGateway.unavailableModelsSet.has(m));
 
       modelLoop: for (const targetModel of currentModelsToTry) {
-        if (keyState.status === 'revoked') {
+        if ((keyState.status as string) === 'revoked') {
           break modelLoop;
         }
 
@@ -1002,13 +1002,13 @@ export class LLMGateway {
           }
         }
 
-        if (keyState.status === 'revoked') {
+        if ((keyState.status as string) === 'revoked') {
           break modelLoop; // move to next key immediately if key revoked
         }
       }
 
       // If key was revoked, skip circuit breaker and continue to next key
-      if (keyState.status === 'revoked') {
+      if ((keyState.status as string) === 'revoked') {
         continue keyCandidateLoop;
       }
 

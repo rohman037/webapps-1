@@ -1,6 +1,6 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { buildCopyRefinerPrompt } from '../prompts/copy-refiner';
 import { CopyRefinerInput } from '../types';
 
@@ -16,7 +16,7 @@ export async function refineShopCopy(input: CopyRefinerInput): Promise<string> {
     return currentGeneratedText;
   }
 
-  logger.info('[copy-refiner-agent] Detected issues with Caption/Hashtags. Running Copy Refiner | tier=tier3');
+  logger.info('[copy-refiner] Detected issues with Caption/Hashtags. Running Copy Refiner | tier=tier3');
   try {
     const { prompt, systemInstruction } = buildCopyRefinerPrompt(currentGeneratedText);
     const copyPayload = {
@@ -40,12 +40,27 @@ export async function refineShopCopy(input: CopyRefinerInput): Promise<string> {
     );
 
     if (refinerResult?.text && refinerResult.text.includes('BAGIAN 1') && refinerResult.text.includes('BAGIAN 3')) {
-      logger.info('[copy-refiner-agent] Copy Refiner successfully updated captions & hashtags.');
+      logger.info('[copy-refiner] Copy Refiner successfully updated captions & hashtags.');
       return refinerResult.text;
     }
   } catch (copyErr) {
-    logger.warn('[copy-refiner-agent] Copy Refiner failed or timed out, keeping original text:', copyErr);
+    logger.warn('[copy-refiner] Copy Refiner failed or timed out, keeping original text:', copyErr);
   }
 
   return currentGeneratedText;
+}
+
+export async function refineCopy(
+  currentGeneratedText: string,
+  _validation?: any,
+  model?: string,
+  customApiKey?: string,
+  clientAccessCode?: string
+): Promise<string> {
+  return refineShopCopy({
+    currentGeneratedText,
+    model,
+    customApiKey,
+    clientAccessCode,
+  });
 }

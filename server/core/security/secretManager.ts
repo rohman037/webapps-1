@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 /**
  * Enterprise Secret & Credential Manager

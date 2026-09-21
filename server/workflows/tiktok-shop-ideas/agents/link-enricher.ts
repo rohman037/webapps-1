@@ -1,8 +1,8 @@
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { LinkEnricherInput, LinkEnricherOutput } from '../types';
 
-export async function enrichProductLink(input: LinkEnricherInput): Promise<LinkEnricherOutput> {
-  const { shopUrl = '' } = input;
+export async function enrichProductLink(inputOrUrl: LinkEnricherInput | string): Promise<LinkEnricherOutput> {
+  const shopUrl = typeof inputOrUrl === 'string' ? inputOrUrl : (inputOrUrl?.shopUrl || '');
   const trimmedShopUrl = shopUrl.trim();
 
   if (!trimmedShopUrl) {
@@ -14,7 +14,7 @@ export async function enrichProductLink(input: LinkEnricherInput): Promise<LinkE
     };
   }
 
-  logger.info(`[link-enricher-agent] Enriching metadata from URL: ${trimmedShopUrl}`);
+  logger.info(`[link-enricher] Enriching metadata from URL: ${trimmedShopUrl}`);
   try {
     let cleanUrl = trimmedShopUrl;
     if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
@@ -66,7 +66,7 @@ export async function enrichProductLink(input: LinkEnricherInput): Promise<LinkE
         }
       } catch (fetchErr) {
         if (attempt === 1) {
-          logger.warn('[link-enricher-agent] Fetch retry reached limit:', fetchErr);
+          logger.warn('[link-enricher] Fetch retry reached limit:', fetchErr);
         }
       }
     }
@@ -138,7 +138,7 @@ ${textSnippet}`;
       };
     }
   } catch (err) {
-    logger.warn('[link-enricher-agent] Error during link enrichment:', err);
+    logger.warn('[link-enricher] Error during link enrichment:', err);
   }
 
   return {

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import {
   fetchTikTokVideoInfo,
   fetchTikTokShopProduct,

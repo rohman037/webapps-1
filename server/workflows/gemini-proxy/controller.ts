@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { extractClientAccessCode } from '@/server/core/state/serverState';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function geminiGenerateController(req: Request, res: Response) {
   const startTime = Date.now();

@@ -1,8 +1,9 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
-import { logger } from './src/utils/logger';
+import { logger } from './server/core/utils/logger';
 import { initDbSeed } from './src/db/dbService';
+import { errorMiddleware } from './server/middleware/error.middleware';
 
 // Core State & Security Services
 import { loadBannedDevices, isDeviceOrIpBanned } from './server/core/security/deviceSecurity';
@@ -190,6 +191,7 @@ async function startServer() {
   });
 
   // Global Express error handler to ensure clean JSON responses
+  app.use(errorMiddleware);
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     logger.error('[Server Error]', err);
     if (res.headersSent) {

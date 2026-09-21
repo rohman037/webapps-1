@@ -12,7 +12,7 @@ import { auditPaymentAndClientHardening } from '@/platform_intelligence/agents/a
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { sanitizeCaptionsAndHashtags } from '@/server/core/utils/sanitizer';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function runOrchestrateService(event: any, contentText?: string) {
   const mockEvent = event || {

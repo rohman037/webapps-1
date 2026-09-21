@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS, recordExecutionAndUpgrade } from '@/server/core/state/serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { runIndonesianQueryCouncil } from './agent';

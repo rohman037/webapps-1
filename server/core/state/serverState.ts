@@ -1,5 +1,5 @@
 import { Request } from 'express';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { dbGetClients } from '@/src/db/dbService';
 
 export interface SSEClientMeta {

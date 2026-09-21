@@ -9,7 +9,7 @@ import {
   generateAEOService,
   runAllAgentsBenchmarkService,
 } from './service';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function orchestrateController(req: Request, res: Response) {
   try {

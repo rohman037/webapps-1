@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS } from '@/server/core/state/serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export const VIDEO_PROMPT_SYSTEM_INSTRUCTION = `Analyze the supplied video once as a professional video reverse-engineering system.
 You MUST output ONLY valid JSON matching the specified schema.

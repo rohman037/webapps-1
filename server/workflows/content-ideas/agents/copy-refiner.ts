@@ -1,7 +1,7 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { sanitizeCaptionsAndHashtags } from '@/server/core/utils/sanitizer';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { COPY_REFINER_SYSTEM_PROMPT } from '../prompts/copy-refiner.system';
 import { buildCopyRefinerUserPrompt } from '../prompts/copy-refiner.user';
 import { CopyRefinerInput } from '../types';

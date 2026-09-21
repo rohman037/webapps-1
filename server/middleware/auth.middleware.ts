@@ -5,7 +5,7 @@ import { logAuthEvent, extractClientIp } from '@/server/core/security/auditLogSe
 import { isDeviceOrIpBanned } from '@/server/core/security/deviceSecurity';
 import { validateAdminCredential, hashCredential } from '@/server/core/security/secretManager';
 import { ROLE_PERMISSIONS, type UserRole } from '@/server/core/security/customClaimsService';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export type { UserRole };
 
@@ -241,3 +241,19 @@ export async function optionalAuthenticate(req: AuthenticatedRequest, res: Respo
 
 // Backwards-compatibility aliases
 export const requireAuth = authenticate;
+
+export function requireAdminRole(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'owner')) {
+    return res.status(403).json({ error: 'Akses ditolak. Endpoint ini membutuhkan hak akses Administrator.' });
+  }
+  next();
+}
+
+export function requireRole(roles: UserRole[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Akses ditolak: role tidak memiliki izin.' });
+    }
+    next();
+  };
+}

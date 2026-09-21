@@ -1,7 +1,7 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { sanitizeCaptionsAndHashtags } from '@/server/core/utils/sanitizer';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { CONTENT_GENERATOR_SYSTEM_PROMPT } from '../prompts/content-generator.system';
 import { buildContentGeneratorUserPrompt } from '../prompts/content-generator.user';
 import { ContentGeneratorInput, ContentGeneratorOutput } from '../types';

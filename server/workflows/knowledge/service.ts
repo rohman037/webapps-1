@@ -8,7 +8,7 @@ import {
 } from '@/server/core/state/systemMemoryState';
 import { dbGetTrackingEvents } from '@/src/db/dbService';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export function getSystemIntelligenceService() {
   const intel = getSystemIntelligenceLevel();
@@ -200,7 +200,7 @@ export function processLearnEventsService(events: any[]) {
   };
 }
 
-export function learnFeedbackService(insight: string, type: string = 'contentIdeas') {
+export function learnFeedbackService(insight: string, type: 'videoPrompt' | 'contentIdeas' | 'photoPrompt' = 'contentIdeas') {
   if (!insight || typeof insight !== 'string' || !insight.trim()) {
     throw new Error('Insight teks tidak valid');
   }

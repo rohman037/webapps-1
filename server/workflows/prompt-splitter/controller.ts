@@ -7,7 +7,7 @@ import {
   sseClients,
 } from '@/server/core/state/serverState';
 import { generateVideoPromptService } from './service';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export async function generatePromptController(req: Request, res: Response) {
   const clientAccessCode = extractClientAccessCode(req);

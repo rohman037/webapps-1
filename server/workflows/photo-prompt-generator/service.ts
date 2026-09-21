@@ -3,7 +3,7 @@ import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS } from '@/server/core/state/serverState';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { runStructuredPromptArchitect, isStructureSchemaConsistent } from './agent';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export interface GeneratePhotoPromptOptions {
   mimeType: string;

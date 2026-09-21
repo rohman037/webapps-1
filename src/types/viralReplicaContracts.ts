@@ -205,6 +205,8 @@ export interface GeneratorAgentOutput {
   hashtags: string[];
 }
 
+export type CompleteVideoProductionDraft = GeneratorAgentOutput;
+
 // ==========================================
 // 7. VALIDATOR AGENT CONTRACT
 // ==========================================

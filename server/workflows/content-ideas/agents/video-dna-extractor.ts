@@ -1,6 +1,6 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { VIDEO_DNA_SYSTEM_PROMPT } from '../prompts/video-dna.system';
 import { buildVideoDNAUserPrompt } from '../prompts/video-dna.user';
 import { VideoDNAInput, VideoDNAOutput } from '../types';

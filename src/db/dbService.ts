@@ -455,7 +455,12 @@ export const dbSavePendingSchemaChange = async (item: any) => {
   }
 };
 
-export const dbGetHistory = async () => safeGet(FIRESTORE_COLLECTIONS.HISTORY || 'history');
+export const dbGetHistory = async (accessCode?: string) => {
+  const allHistory = await safeGet(FIRESTORE_COLLECTIONS.HISTORY || 'history');
+  if (!accessCode || !accessCode.trim()) return allHistory;
+  const cleanCode = accessCode.trim().toUpperCase();
+  return allHistory.filter((item: any) => !item.accessCode || item.accessCode.toUpperCase() === cleanCode);
+};
 export const dbSaveHistoryItem = async (item: any) => {
   if (Array.isArray(item)) {
     for (const i of item) await safeSave(FIRESTORE_COLLECTIONS.HISTORY || 'history', i);

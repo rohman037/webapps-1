@@ -1,7 +1,7 @@
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { fetchTikTokShopProduct } from '@/server/core/tiktok-fetcher';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 import { PRODUCT_INTEL_SYSTEM_PROMPT } from '../prompts/product-intel.system';
 import { buildIdentityAnchorPrompt } from '../prompts/product-intel.user';
 import { ProductIntelInput, ProductIntelOutput } from '../types';

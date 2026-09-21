@@ -16,7 +16,7 @@ export interface GenerationEvent {
   toneOfVoice?: string;
   contentSalesType?: string;   // "jualan_afiliasi" | "soft_selling" | ...
   modelUsed: string;
-  tierUsed: 'flagship' | 'tier2' | 'tier3' | 'user_key';
+  tierUsed: 'flagship' | 'tier2' | 'tier3' | 'user_key' | 'specialized';
   tokensIn?: number;
   tokensOut?: number;
   latencyMs: number;
@@ -31,7 +31,7 @@ export interface ActiveGenerationItem {
   accessCode: string;
   tool: string;
   category: string;
-  status: 'generating' | 'analyzing' | 'completed' | 'active';
+  status: 'generating' | 'analyzing' | 'completed' | 'active' | 'failed';
   startedAt?: string;
   updatedAt?: number;
   details?: string;
@@ -43,7 +43,7 @@ export interface ActiveGenerationItem {
  */
 export function reportActiveGenerationStatus(
   id: string,
-  status: 'generating' | 'analyzing' | 'completed' | 'active',
+  status: 'generating' | 'analyzing' | 'completed' | 'active' | 'failed',
   details?: string,
   meta?: { accessCode?: string; tool?: string; category?: string; clientId?: string }
 ): void {

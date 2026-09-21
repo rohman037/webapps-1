@@ -7,7 +7,7 @@ import {
   dbSaveClient,
 } from '@/src/db/dbService';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
-import { logger } from '@/src/utils/logger';
+import { logger } from '@/server/core/utils/logger';
 
 export interface BannedDeviceItem {
   id: string;
