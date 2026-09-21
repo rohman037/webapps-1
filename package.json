@@ -8,7 +8,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "seed:firestore": "tsx scripts/seed-firestore.ts",
+    "seed:firestore": "tsx scripts/firebase/seed-firestore.ts",
     "clean": "rm -rf dist",
     "lint": "echo 'Lint disabled for legacy backend files'"
   },

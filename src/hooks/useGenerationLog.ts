@@ -3,7 +3,7 @@ import { emitGenerationEvent, GenerationEvent } from '../events/generationEvent'
 import { getUserSession } from '../lib/auth';
 import { getClients } from '../lib/admin/clients';
 import { categorizeContent } from '../events/categorize';
-import { getTierForModel } from '@/platform_intelligence/routing/modelRouter';
+import { getTierForModel } from '@/server/core/llm/routing/modelRouter';
 import { getAntiLimitConfig } from '../lib/antiLimit';
 import { runContentAnalysisJob } from '@/platform_intelligence/agents/contentAnalysisJob';
 

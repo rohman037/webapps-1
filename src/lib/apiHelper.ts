@@ -1,7 +1,7 @@
 import { getAntiLimitConfig, removeDeadKey } from './antiLimit';
 import { getModelPriorities, addApiKeyLog } from './admin/apiKeys';
 import { api } from './apiProxy';
-import { ALL_GEMINI_CASCADING_MODELS } from '@/platform_intelligence/routing/modelRouter';
+import { ALL_GEMINI_CASCADING_MODELS } from '@/server/core/llm/routing/modelRouter';
 export { ALL_GEMINI_CASCADING_MODELS };
 
 export function getCategoryModelPriority(category: 'text' | 'image' | 'video' = 'text'): string[] {

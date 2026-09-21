@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { extractClientAccessCode } from '@/server/core/state/serverState';
-import { normalizeGeminiModel } from '@/platform_intelligence/routing/modelRouter';
+import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { logger } from '@/src/utils/logger';
 

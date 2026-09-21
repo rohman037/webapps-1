@@ -1,4 +1,4 @@
-import { LLMGateway } from '@/platform_intelligence/routing/llmGateway';
+import { LLMGateway } from '@/server/core/llm/routing/llmGateway';
 
 export interface StructuredPromptArchitectResult {
   isOptimized: boolean;

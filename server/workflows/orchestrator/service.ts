@@ -10,7 +10,7 @@ import { updateHookPatternSystemMemory } from '@/platform_intelligence/agents/ag
 import { superviseMetaAutoBuild } from '@/platform_intelligence/agents/agentMetaAutoBuildSupervisor';
 import { auditPaymentAndClientHardening } from '@/platform_intelligence/agents/agentPaymentClientHardeningAuditor';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
-import { normalizeGeminiModel } from '@/platform_intelligence/routing/modelRouter';
+import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { sanitizeCaptionsAndHashtags } from '@/server/core/utils/sanitizer';
 import { logger } from '@/src/utils/logger';
 

@@ -1,4 +1,4 @@
-import { llmGateway } from '@/platform_intelligence/routing/llmGateway';
+import { llmGateway } from './routing/llmGateway';
 import { broadcastLiveEvent } from '../state/serverState';
 
 // Register broadcast handler with LLM Gateway

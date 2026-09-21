@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS } from '@/server/core/state/serverState';
-import { normalizeGeminiModel } from '@/platform_intelligence/routing/modelRouter';
+import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
 import { runStructuredPromptArchitect, isStructureSchemaConsistent } from './agent';
 import { logger } from '@/src/utils/logger';
 

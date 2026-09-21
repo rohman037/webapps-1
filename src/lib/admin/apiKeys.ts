@@ -1,4 +1,4 @@
-import { TOP_MODEL_ORDER, IMAGE_MODEL_ORDER, VIDEO_MODEL_ORDER } from '@/platform_intelligence/routing/modelConstants';
+import { TOP_MODEL_ORDER, IMAGE_MODEL_ORDER, VIDEO_MODEL_ORDER } from '@/server/core/llm/routing/modelConstants';
 
 export interface ApiKeyItem {
   id: string;

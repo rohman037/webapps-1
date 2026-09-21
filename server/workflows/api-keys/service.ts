@@ -6,13 +6,13 @@ import {
   dbGetModelPriorities,
   dbSaveModelPriorities,
 } from '@/src/db/dbService';
-import { llmGateway } from '@/platform_intelligence/routing/llmGateway';
+import { llmGateway } from '@/server/core/llm/routing/llmGateway';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
 import {
   TOP_MODEL_ORDER,
   IMAGE_MODEL_ORDER,
   VIDEO_MODEL_ORDER,
-} from '@/platform_intelligence/routing/modelRouter';
+} from '@/server/core/llm/routing/modelRouter';
 import { isRealApiKey, maskApiKeyStr, getGeminiClient } from '@/server/core/llm/keyUtils';
 import { recordAuditLog } from '@/server/core/security/auditLogService';
 import { logger } from '@/src/utils/logger';
