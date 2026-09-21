@@ -23,6 +23,7 @@ import {
   bannedDevicesMap,
   failedLoginTracker,
 } from '@/server/core/security/deviceSecurity';
+import { validateAdminCredential, hashCredential } from '@/server/core/security/secretManager';
 import {
   recordUserPresence,
   removeUserPresence,
@@ -305,17 +306,19 @@ export async function verifyAccessCodeService(data: {
     prevAttempts.count = 0;
   }
 
-  const masterAdminKey = process.env.ADMIN_ACCESS_CODE ? process.env.ADMIN_ACCESS_CODE.trim().toUpperCase() : '';
-  const masterAdminEmails = ['AHMADDAVID0906@GMAIL.COM', 'GLOBALLENSN@GMAIL.COM', 'DAVIDROHMAN037@GMAIL.COM'];
-
-  // 2. MASTER ADMIN LOGIN
-  if ((masterAdminKey && cleaned === masterAdminKey) || masterAdminEmails.includes(cleaned)) {
+  // 2. MASTER ADMIN / OWNER LOGIN VIA ENTERPRISE SECRET MANAGER
+  const adminValidation = validateAdminCredential(cleaned);
+  if (adminValidation.isValid) {
     failedLoginTracker.delete(trackerKey);
-    const loggedInEmail = cleaned.includes('@') ? cleaned.toLowerCase() : 'ahmaddavid0906@gmail.com';
-    const adminCode = masterAdminKey || loggedInEmail;
+    const isOwner = adminValidation.role === 'owner';
+    const displayName = isOwner ? 'Super Admin (David)' : 'Administrator';
+    const adminCode = cleaned;
+    const isEmail = cleaned.includes('@');
+    const adminEmail = isEmail ? cleaned.toLowerCase() : 'davidrohman037@gmail.com';
+
     recordUserPresence({
       accessCode: adminCode,
-      name: 'Administrator',
+      name: displayName,
       role: 'admin',
       ip,
       userAgent,
@@ -323,9 +326,9 @@ export async function verifyAccessCodeService(data: {
 
     const logItem: AuditLogItem = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      adminName: `Master Admin (${loggedInEmail})`,
+      adminName: `${displayName}`,
       action: 'Login Berhasil',
-      details: `Otentikasi Master Admin sukses dari IP: ${ip} • Browser: ${userAgent.slice(0, 80)}`,
+      details: `Otentikasi ${displayName} (${adminEmail}) sukses dari IP: ${ip} • Browser: ${userAgent.slice(0, 80)}`,
       timestamp: new Date().toISOString(),
       category: 'system',
     };
@@ -341,16 +344,21 @@ export async function verifyAccessCodeService(data: {
       body: {
         success: true,
         role: 'admin',
-        name: 'Administrator',
-        email: loggedInEmail,
+        name: displayName,
+        email: adminEmail,
         code: adminCode,
       },
     };
   }
 
-  // 3. REGISTERED CLIENT LOGIN
+  // 3. REGISTERED CLIENT LOGIN (HASH-AWARE)
+  const candidateHash = hashCredential(cleaned);
   const clients = await dbGetClients();
-  const client = clients.find((c) => c.accessCode && c.accessCode.toUpperCase() === cleaned);
+  const client = clients.find(
+    (c) =>
+      (c.accessCodeHash && c.accessCodeHash === candidateHash) ||
+      (c.accessCode && c.accessCode.toUpperCase() === cleaned)
+  );
 
   if (client) {
     const now = Date.now();
@@ -453,9 +461,13 @@ export async function verifyAccessCodeService(data: {
     };
   }
 
-  // 4. ACCESS CODE POOL LOGIN
+  // 4. ACCESS CODE POOL LOGIN (HASH-AWARE)
   const accessCodes = await dbGetAccessCodes();
-  const matchedCode = accessCodes.find((item) => item.code && item.code.toUpperCase() === cleaned);
+  const matchedCode = accessCodes.find(
+    (item) =>
+      (item.accessCodeHash && item.accessCodeHash === candidateHash) ||
+      (item.code && item.code.toUpperCase() === cleaned)
+  );
 
   if (matchedCode) {
     failedLoginTracker.delete(trackerKey);
@@ -564,7 +576,7 @@ export async function logoutService(data: { accessCode?: string; name?: string; 
 
   if (code || name) {
     if (code) {
-      removeUserPresence(code);
+      removeUserPresence(code, ip);
     }
     const logoutLogItem: AuditLogItem = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

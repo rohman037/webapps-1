@@ -16,7 +16,8 @@ export async function callGeminiWithFallback(
   targetTier?: 'flagship' | 'tier2' | 'tier3' | 'user_key',
   toolName?: string,
   isUserExplicitChoice?: boolean,
-  customEndpoint?: string
+  customEndpoint?: string,
+  isSingleRequestMode?: boolean
 ): Promise<{ text: string; modelUsed: string; tierUsed?: string; latencyMs?: number; keyMasked?: string }> {
   const inferredTool = toolName || 'AI Generation';
   const requestConfig = { ...(promptPayload.config || {}) };
@@ -40,7 +41,8 @@ export async function callGeminiWithFallback(
     clientAccessCode,
     toolName: inferredTool,
     targetTier: resolvedTier,
-    endpoint: customEndpoint || `/api/${inferredTool.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+    endpoint: customEndpoint || `/api/${inferredTool.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+    isSingleRequestMode: Boolean(isSingleRequestMode || inferredTool.toLowerCase().includes('video to prompt') || inferredTool.toLowerCase().includes('video prompt') || inferredTool.toLowerCase().includes('ekstrak prompt'))
   };
 
   const response = await llmGateway.execute(gatewayPayload);

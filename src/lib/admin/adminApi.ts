@@ -6,15 +6,13 @@ import { getUserSession } from '../auth';
  */
 export function getAdminHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
   const session = getUserSession();
-  const activeCode = session?.code || (typeof localStorage !== 'undefined' ? localStorage.getItem('satset_access_code') : null) || 'SATSET-ADMIN';
-  const adminEmail = session?.email || (typeof localStorage !== 'undefined' ? localStorage.getItem('satset_admin_email') : null) || 'davidrohman037@gmail.com';
+  const activeCode = session?.code || (typeof localStorage !== 'undefined' ? localStorage.getItem('satset_access_code') : null) || '';
+  const adminEmail = session?.email || (typeof localStorage !== 'undefined' ? localStorage.getItem('satset_admin_email') : null) || '';
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-access-code': activeCode,
-    'x-admin-code': activeCode,
-    'x-admin-email': adminEmail,
-    'Authorization': `Bearer ${activeCode}`,
+    ...(activeCode ? { 'x-access-code': activeCode, 'x-admin-code': activeCode, 'Authorization': `Bearer ${activeCode}` } : {}),
+    ...(adminEmail ? { 'x-admin-email': adminEmail } : {}),
     ...customHeaders,
   };
 

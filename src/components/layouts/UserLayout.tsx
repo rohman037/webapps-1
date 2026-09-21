@@ -325,6 +325,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
   const [tiktokInputUrl, setTiktokInputUrl] = useState<string>('');
   const [sourceCaption, setSourceCaption] = useState<string>('');
   const [sourceUrl, setSourceUrl] = useState<string>('');
+  const [actualVideoDuration, setActualVideoDuration] = useState<number | null>(null);
   const [isFetchingTikTokVideo, setIsFetchingTikTokVideo] = useState<boolean>(false);
   const [tiktokInputError, setTiktokInputError] = useState<string | null>(null);
 
@@ -476,6 +477,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
     tempVid.src = url;
     tempVid.onloadedmetadata = () => {
       const durationSec = Math.round(tempVid.duration || 0);
+      setActualVideoDuration(tempVid.duration || null);
       learningSync.track('video_uploaded', {
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
@@ -484,6 +486,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
       });
     };
     tempVid.onerror = () => {
+      setActualVideoDuration(null);
       learningSync.track('video_uploaded', {
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
@@ -514,32 +517,26 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
     setIsGenerating(true);
     setError(null);
     setProgressPercent(10);
-    setProgressStep('Membaca & mengonversi data video...');
+    setProgressStep('Membaca & memvalidasi data video...');
     setCurrentClipProcessing(null);
-
-    let estimatedClipsCount = 4;
-    if (segmentDuration !== 'auto') {
-      const sec = parseInt(segmentDuration, 10) || 10;
-      estimatedClipsCount = Math.max(1, Math.min(12, Math.ceil(30 / sec)));
-    }
 
     let currPct = 10;
     const progressInterval = setInterval(() => {
       currPct += Math.floor(Math.random() * 8) + 4;
       if (currPct > 92) currPct = 92;
       setProgressPercent(currPct);
+      setCurrentClipProcessing(null);
 
       if (currPct < 25) {
-        setProgressStep('Menganalisis pergerakan & pencahayaan video...');
-        setCurrentClipProcessing(null);
-      } else if (currPct < 85) {
-        const totalClips = estimatedClipsCount;
-        const clipIndex = Math.min(totalClips, Math.max(1, Math.floor(((currPct - 25) / 60) * totalClips) + 1));
-        setCurrentClipProcessing({ current: clipIndex, total: totalClips });
-        setProgressStep(`Memproses klip ${clipIndex} dari ${totalClips}...`);
+        setProgressStep('Membaca & menyiapkan video...');
+      } else if (currPct < 50) {
+        setProgressStep('Mengunggah video ke AI Vision Engine...');
+      } else if (currPct < 75) {
+        setProgressStep('AI sedang menganalisis visual, pergerakan & audio...');
+      } else if (currPct < 90) {
+        setProgressStep('Menyusun struktur shot & kontinuitas adegan...');
       } else {
-        setCurrentClipProcessing(null);
-        setProgressStep('Menyusun Master Prompt & format tag sinematik...');
+        setProgressStep('Memformat prompt sinematik siap pakai...');
       }
     }, 550);
     
@@ -563,6 +560,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
           includeCinematics,
           sourceCaption,
           sourceUrl,
+          actualDuration: actualVideoDuration || undefined,
         }),
       });
 
@@ -573,10 +571,10 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
       setProgressStep('Selesai memecah prompt klip!');
 
       setPrompt(data.prompt);
-      setActiveModelUsed(data.modelUsed || (analysisMode === 'deep' ? 'gemini-3.1-pro-preview' : 'Gemini Auto-Cascade'));
+      setActiveModelUsed(data.modelUsed || (analysisMode === 'deep' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash'));
 
       const parsedClips = parseClipSegments(data.prompt);
-      const exactClipCount = parsedClips.length || estimatedClipsCount;
+      const exactClipCount = parsedClips.length || 1;
 
       learningSync.track('prompt_split_generated', {
         clipCount: exactClipCount,
@@ -612,7 +610,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
     } catch (err: any) {
       clearInterval(progressInterval);
       console.error(err);
-      setError(err.message || 'An error occurred while generating the prompt.');
+      setError(err.message || 'Analisis video gagal karena model AI tidak dapat memproses video ini.');
     } finally {
       setIsGenerating(false);
     }
@@ -622,6 +620,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
     setFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
+    setActualVideoDuration(null);
     setPrompt(null);
     setError(null);
     setActiveModelUsed(null);

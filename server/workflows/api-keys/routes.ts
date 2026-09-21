@@ -1,5 +1,7 @@
 import { Router } from 'express';
-import { requireAuth, requireAdminRole } from '@/src/middleware/auth';
+import { requireAuth } from '@/server/middleware/auth.middleware';
+import { requireAdminRole } from '@/server/middleware/role.middleware';
+import { adminActionRateLimiter } from '@/server/middleware/rateLimit.middleware';
 import {
   getApiKeysController,
   updateApiKeysController,
@@ -15,22 +17,23 @@ import {
 
 export const apiKeysRouter = Router();
 
-// API Keys Pool Management
-apiKeysRouter.get(['/api/apikeys', '/api/admin/apikeys'], getApiKeysController);
-apiKeysRouter.post(['/api/apikeys', '/api/admin/apikeys'], updateApiKeysController);
+// API Keys Pool Management (Admin/Owner only)
+apiKeysRouter.get(['/api/apikeys', '/api/admin/apikeys'], requireAuth, requireAdminRole, getApiKeysController);
+apiKeysRouter.post(['/api/apikeys', '/api/admin/apikeys'], requireAuth, requireAdminRole, adminActionRateLimiter, updateApiKeysController);
 
-// API Keys Logs
-apiKeysRouter.get(['/api/apikeys/logs', '/api/admin/apikeys/logs'], getApiKeyLogsController);
-apiKeysRouter.post(['/api/apikeys/logs', '/api/admin/apikeys/logs'], addApiKeyLogController);
+// API Keys Logs (Admin/Owner only)
+apiKeysRouter.get(['/api/apikeys/logs', '/api/admin/apikeys/logs'], requireAuth, requireAdminRole, getApiKeyLogsController);
+apiKeysRouter.post(['/api/apikeys/logs', '/api/admin/apikeys/logs'], requireAuth, requireAdminRole, adminActionRateLimiter, addApiKeyLogController);
 
 // Model Routing & Priorities
 apiKeysRouter.get(['/api/model-priorities', '/api/admin/model-priorities'], getModelPrioritiesController);
-apiKeysRouter.post(['/api/model-priorities', '/api/admin/model-priorities'], requireAuth, requireAdminRole, updateModelPrioritiesController);
+apiKeysRouter.post(['/api/model-priorities', '/api/admin/model-priorities'], requireAuth, requireAdminRole, adminActionRateLimiter, updateModelPrioritiesController);
 
-// Centralized LLM Gateway Metrics & Health
-apiKeysRouter.get('/api/llm-gateway/metrics', getLlmGatewayMetricsController);
-apiKeysRouter.get('/api/llm-gateway/health', getLlmGatewayHealthController);
+// Centralized LLM Gateway Metrics & Health (Admin/Owner only)
+apiKeysRouter.get('/api/llm-gateway/metrics', requireAuth, requireAdminRole, getLlmGatewayMetricsController);
+apiKeysRouter.get('/api/llm-gateway/health', requireAuth, requireAdminRole, getLlmGatewayHealthController);
 
-// Key Testing & Health Probes
-apiKeysRouter.post('/api/test-gemini-key', testGeminiKeyController);
-apiKeysRouter.post('/api/admin/apikeys/poll-all', pollAllApiKeysController);
+// Key Testing & Health Probes (Admin/Owner only)
+apiKeysRouter.post('/api/test-gemini-key', requireAuth, requireAdminRole, adminActionRateLimiter, testGeminiKeyController);
+apiKeysRouter.post('/api/admin/apikeys/poll-all', requireAuth, requireAdminRole, adminActionRateLimiter, pollAllApiKeysController);
+

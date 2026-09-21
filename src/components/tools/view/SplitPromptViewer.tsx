@@ -57,13 +57,47 @@ export interface ClipSegment {
 export interface SeoCaptionInfo {
   caption: string;
   hashtags: string;
+  cleanCaptionWithoutTags?: string;
   tagsList: string[];
   charCount: number;
   wordCount: number;
 }
 
+export function extractStructuredData(rawText: string): any | null {
+  if (!rawText) return null;
+  const match = rawText.match(/<!--\s*STRUCTURED_DATA:\s*([\s\S]*?)\s*-->/);
+  if (match) {
+    try {
+      return JSON.parse(match[1].trim());
+    } catch (e) {}
+  }
+  if (rawText.trim().startsWith('{')) {
+    try {
+      return JSON.parse(rawText.trim());
+    } catch (e) {}
+  }
+  return null;
+}
+
 export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | null {
   if (!rawText) return null;
+
+  const structured = extractStructuredData(rawText);
+  if (structured && (structured.caption || structured.hashtags)) {
+    const cap = (structured.caption || '').trim();
+    const hash = (structured.hashtags || '').trim();
+    const tagMatches = hash.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g) || [];
+    const tagsList = tagMatches.slice(0, 5);
+    const combined = `${cap}\n\n${tagsList.join(' ')}`.trim();
+    return {
+      caption: combined,
+      hashtags: tagsList.join(' '),
+      cleanCaptionWithoutTags: cap,
+      tagsList,
+      charCount: combined.length,
+      wordCount: combined ? combined.split(/\s+/).filter(Boolean).length : 0,
+    };
+  }
 
   // Check for caption & hashtag section
   const sectionMatch = rawText.match(/(?:###|\*\*)\s*(?:📱|🔥|✨)?\s*CAPTION\s*(?:&|DAN)?\s*HASHTAG[\s\S]*$/i);
@@ -252,6 +286,68 @@ function extractSegmentDetails(body: string, id: number, totalClips: number) {
 
 export function parseClipSegments(rawText: string, defaultDurationSec = 10): ClipSegment[] {
   if (!rawText) return [];
+
+  // Check if structured data exists (100% reliable direct JSON parsing)
+  const structured = extractStructuredData(rawText);
+  if (structured && Array.isArray(structured.shots) && structured.shots.length > 0) {
+    const totalClips = structured.shots.length;
+    return structured.shots.map((shot: any, index: number) => {
+      const id = index + 1;
+      const startSec = typeof shot.startSec === 'number' ? shot.startSec : index * defaultDurationSec;
+      const endSec = typeof shot.endSec === 'number' ? shot.endSec : (index + 1) * defaultDurationSec;
+      const durationSec = Math.max(1, Math.round(endSec - startSec));
+      const timestamp = `${startSec}–${endSec} detik`;
+
+      const visual = shot.scene || shot.subject || structured.global?.style || 'Visual adegan sinematik';
+      const actionsList = Array.isArray(shot.actions) ? shot.actions : (shot.actions ? [shot.actions] : []);
+      const aksi = actionsList.join('. ');
+      const voiceOver = shot.dialogue || shot.voiceOver || '';
+      const subteks = shot.onScreenText || '';
+
+      const lensInfo = shot.cameraChange || structured.cinematography?.lens || structured.cinematography?.framing || 'Standar Lensa';
+      const cameraMotion = shot.cameraChange || structured.cinematography?.cameraMovement || 'Kamera Dinamis';
+      const lightingInfo = shot.lightingChange || structured.cinematography?.lighting || 'Pencahayaan Natural';
+
+      let roleTag = 'Adegan Sinematik';
+      if (id === 1) {
+        roleTag = 'Hook Visual (0-3s)';
+      } else if (id === 2) {
+        roleTag = 'Eskalasi Masalah';
+      } else if (id === totalClips && totalClips > 2) {
+        roleTag = 'Call to Action';
+      }
+
+      const voiceWords = voiceOver.trim() ? voiceOver.trim().split(/\s+/).filter(Boolean) : [];
+      const wordCount = voiceWords.length;
+      const estVoiceDurationSec = Math.max(1, Math.round((wordCount / 140) * 60));
+
+      const masterPrompt = shot.generationPrompt ||
+        `${structured.global?.style || 'Cinematic video'}, ${visual}, ${aksi}, ${lensInfo}, ${lightingInfo}, 8K photorealistic`;
+
+      const content = `${visual}\n${aksi}\n${voiceOver ? `voice over: ${voiceOver}` : (subteks ? `Subteks: ${subteks}` : '')}`.trim();
+
+      return {
+        id,
+        title: `Segmen Prompt Klip ${id}`,
+        timestamp,
+        startSec,
+        endSec,
+        durationSec,
+        content,
+        visual,
+        aksi,
+        voiceOver,
+        subteks,
+        lensInfo,
+        cameraMotion,
+        lightingInfo,
+        roleTag,
+        wordCount,
+        estVoiceDurationSec,
+        masterPrompt,
+      };
+    });
+  }
 
   // Strip caption/hashtag section from the clips body
   const clipsPart = rawText.split(/(?:###|\*\*)\s*(?:📱|🔥|✨)?\s*CAPTION\s*(?:&|DAN)?\s*HASHTAG/i)[0];

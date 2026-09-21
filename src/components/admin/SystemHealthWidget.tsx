@@ -45,14 +45,19 @@ export default function SystemHealthWidget() {
       const dbRes = await fetch('/api/health/firestore');
       const dbData = await dbRes.json();
       if (dbRes.ok && dbData.ok) {
-        setDbStatus({ ok: true, statusText: 'Firestore Connected (OK)' });
+        if (dbData.status === 'CONNECTED') {
+          const latencyLabel = dbData.latencyMs ? `${dbData.latencyMs}ms` : 'OK';
+          setDbStatus({ ok: true, statusText: `Firestore Connected (${latencyLabel})` });
+        } else {
+          setDbStatus({ ok: true, statusText: `Resilient Local DB (${dbData.status || 'Active'})` });
+        }
       } else {
         const errorMsg = dbData.status === 'QUOTA_EXCEEDED'
           ? 'Quota Exceeded (Memory Cache Active)'
           : dbData.status === 'PERMISSION_DENIED'
           ? 'Permission Denied (IAM Role Missing)'
           : `DB Status: ${dbData.status || 'Fallback Active'}`;
-        setDbStatus({ ok: false, statusText: errorMsg, detail: dbData.message });
+        setDbStatus({ ok: false, statusText: errorMsg, detail: dbData.detail || dbData.message });
       }
     } catch (dbErr) {
       setDbStatus({ ok: false, statusText: 'Firestore Unreachable' });

@@ -14,20 +14,79 @@ import {
   VIDEO_MODEL_ORDER,
 } from '@/platform_intelligence/routing/modelRouter';
 import { isRealApiKey, maskApiKeyStr, getGeminiClient } from '@/server/core/llm/keyUtils';
+import { recordAuditLog } from '@/server/core/security/auditLogService';
 import { logger } from '@/src/utils/logger';
 
-export async function getApiKeysService() {
+export async function getApiKeysService(maskForClient: boolean = true) {
   const keys = await dbGetApiKeys();
-  return keys || [];
+  if (!keys || !Array.isArray(keys)) return [];
+  if (!maskForClient) return keys;
+
+  // Mask API keys so raw secret keys are never exposed over the wire
+  return keys.map((k: any) => ({
+    ...k,
+    key: maskApiKeyStr(k.key || ''),
+    masked: true,
+  }));
 }
 
-export async function updateApiKeysService(keys: any[]) {
-  if (Array.isArray(keys)) {
-    await dbSaveApiKeys(keys);
-    llmGateway.syncPolledKeys(keys);
-    broadcastLiveEvent({ type: 'apikeys_updated', keys });
+export async function updateApiKeysService(newKeys: any[], actorName?: string) {
+  if (!Array.isArray(newKeys)) {
+    throw new Error('Payload kunci API harus berupa array');
   }
-  return keys;
+
+  const existingKeys = await dbGetApiKeys();
+  const existingMap = new Map<string, any>();
+  for (const ek of existingKeys) {
+    if (ek.id) existingMap.set(ek.id, ek);
+    if (ek.alias) existingMap.set(ek.alias, ek);
+  }
+
+  // Validate and preserve raw keys if masked string was sent back
+  const sanitizedKeys = newKeys.map((item: any, idx: number) => {
+    let rawKey = String(item.key || '').trim();
+
+    // If key is masked (contains '...' or '***'), restore existing raw key from DB
+    if (rawKey.includes('...') || rawKey.includes('***')) {
+      const existing = (item.id && existingMap.get(item.id)) || (item.alias && existingMap.get(item.alias));
+      if (existing && existing.key) {
+        rawKey = existing.key;
+      }
+    }
+
+    // Validation: key must have a reasonable length
+    if (rawKey && rawKey.length < 15 && !rawKey.startsWith('AIzaSy')) {
+      logger.warn(`[API Key Security] Potensi kunci tidak valid terdeteksi pada indeks ${idx}: ${rawKey.substring(0, 6)}...`);
+    }
+
+    return {
+      ...item,
+      id: item.id || `key_${Date.now()}_${idx}`,
+      key: rawKey,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  await dbSaveApiKeys(sanitizedKeys);
+  llmGateway.syncPolledKeys(sanitizedKeys);
+
+  // Broadcast masked keys to avoid leaking plaintext keys via SSE
+  const maskedBroadcastKeys = sanitizedKeys.map((k) => ({
+    ...k,
+    key: maskApiKeyStr(k.key || ''),
+  }));
+  broadcastLiveEvent({ type: 'apikeys_updated', keys: maskedBroadcastKeys });
+
+  // Record audit log
+  await recordAuditLog({
+    action: '[API KEY] Update Pool Kunci API',
+    details: `Admin memperbarui ${sanitizedKeys.length} API key dalam pool Gemini.`,
+    category: 'apikey',
+    actor: actorName || 'Admin',
+    adminName: actorName || 'Administrator',
+  });
+
+  return maskedBroadcastKeys;
 }
 
 export async function getApiKeyLogsService() {

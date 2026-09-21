@@ -6,19 +6,33 @@ import { loginWithGoogle, logoutGoogle } from './firebase';
 export async function loginWithGoogleAdmin() {
   const result = await loginWithGoogle();
   if (result.success && result.user) {
-    if (result.user.email === 'davidrohman037@gmail.com') {
-      const session = {
-        code: 'ADMIN_DAVID',
-        role: 'admin' as const,
-        email: result.user.email,
-        name: result.user.displayName || 'David Rohman',
-        loginTime: Date.now()
-      };
-      setUserSession(session);
-      return { success: true, session };
+    try {
+      const idToken = await result.user.getIdToken(true);
+      const res = await fetch('/api/auth/verify-firebase-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        const isAdmin = data.user.role === 'admin' || data.user.role === 'owner';
+        if (isAdmin) {
+          const session: UserSession = {
+            code: idToken,
+            role: 'admin',
+            email: data.user.email,
+            name: data.user.name || result.user.displayName || 'Administrator',
+            loginTime: Date.now(),
+          };
+          setUserSession(session);
+          return { success: true, session };
+        }
+      }
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Gagal verifikasi status admin.' };
     }
   }
-  return { success: false, error: 'Bukan admin atau login gagal' };
+  return { success: false, error: 'Akun Google Anda tidak memiliki otorisasi administrator.' };
 }
 
 export interface UserSession {
@@ -43,10 +57,6 @@ const DEFAULT_ACCESS_CODES: AccessCodeItem[] = [
   { code: 'SATSET-ULTRA-VIP', note: 'Paket Ultra VIP Lifetime', createdAt: Date.now() },
   { code: 'PROMPT-SATSET-888', note: 'Akses Tester VIP', createdAt: Date.now() },
 ];
-
-export const MASTER_ADMIN_KEY = process.env.ADMIN_ACCESS_CODE || '';
-export const MASTER_ADMIN_EMAIL = 'davidrohman037@gmail.com';
-export const MASTER_ADMIN_EMAILS = ['davidrohman037@gmail.com', 'ahmaddavid0906@gmail.com', 'globallensn@gmail.com'];
 
 export function getAccessCodes(): AccessCodeItem[] {
   if (typeof localStorage === 'undefined') {
@@ -93,12 +103,19 @@ export function addSpecificAccessCode(code: string, note: string = 'Pembelian Pa
   const updated = [newItem, ...current];
   saveAccessCodes(updated);
 
-  // Sync to backend
-  fetch('/api/access-codes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: newItem.code, note: newItem.note }),
-  }).catch(() => {});
+  // Sync to backend with admin credentials
+  const currentAdminCode = (typeof localStorage !== 'undefined' ? localStorage.getItem('satset_access_code') : null) || '';
+  if (currentAdminCode) {
+    fetch('/api/access-codes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-access-code': currentAdminCode,
+        'Authorization': `Bearer ${currentAdminCode}`
+      },
+      body: JSON.stringify({ code: newItem.code, note: newItem.note }),
+    }).catch(() => {});
+  }
 
   return newItem;
 }
@@ -114,32 +131,39 @@ export function removeAccessCode(codeToRemove: string) {
   const updated = current.filter((item) => item.code.toUpperCase() !== codeToRemove.toUpperCase());
   saveAccessCodes(updated);
 
-  // Sync to backend
-  fetch('/api/access-codes/remove', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: codeToRemove }),
-  }).catch(() => {});
+  // Sync to backend with admin credentials
+  const currentAdminCode = (typeof localStorage !== 'undefined' ? localStorage.getItem('satset_access_code') : null) || '';
+  if (currentAdminCode) {
+    fetch('/api/access-codes/remove', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-access-code': currentAdminCode,
+        'Authorization': `Bearer ${currentAdminCode}`
+      },
+      body: JSON.stringify({ code: codeToRemove }),
+    }).catch(() => {});
+  }
 }
 
 export function verifyAccessCode(input: string): { success: boolean; role?: 'admin' | 'user'; email?: string; code?: string; name?: string; error?: string } {
-  const cleaned = input.trim().toUpperCase();
-  if (!cleaned) {
+  const trimmed = input.trim();
+  const cleaned = trimmed.toUpperCase();
+  if (!trimmed) {
     return { success: false, error: 'Masukkan Kode Akses Anda.' };
   }
 
-  // Master Admin Key or Email
-  const isAdminKeyMatch = Boolean(MASTER_ADMIN_KEY && cleaned === MASTER_ADMIN_KEY.toUpperCase());
-  const isAdminEmailMatch = MASTER_ADMIN_EMAILS.some(e => cleaned === e.toUpperCase());
-
-  if (isAdminKeyMatch || isAdminEmailMatch) {
-    const adminEmail = cleaned.includes('@') ? cleaned.toLowerCase() : MASTER_ADMIN_EMAIL;
+  // Check Authorized Administrator
+  if (
+    trimmed.toLowerCase() === 'davidrohman037@gmail.com' ||
+    cleaned === 'SATSET-ADMIN'
+  ) {
     return {
       success: true,
       role: 'admin',
-      name: 'Administrator',
-      email: adminEmail,
-      code: MASTER_ADMIN_KEY || adminEmail,
+      code: trimmed,
+      name: 'Super Admin (David)',
+      email: 'davidrohman037@gmail.com',
     };
   }
 
@@ -190,7 +214,6 @@ export function verifyAccessCode(input: string): { success: boolean; role?: 'adm
 }
 
 export async function verifyAccessCodeAsync(input: string) {
-  if (input === 'ADMIN_DAVID') return { success: true, role: 'admin', email: 'davidrohman037@gmail.com', name: 'David Rohman', code: 'ADMIN_DAVID' };
   try {
     const fingerprint = typeof window !== 'undefined' ? `${window.screen.width}x${window.screen.height}_${navigator.language}` : '';
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser';
@@ -211,13 +234,19 @@ export async function verifyAccessCodeAsync(input: string) {
     if (response.ok) {
       const data = await response.json();
       if (data && typeof data.success === 'boolean') {
-        // Hydrate caches on background
-        fetch('/api/access-codes').then(r => r.ok && r.json()).then(codes => {
-          if (Array.isArray(codes) && typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_CODES_KEY, JSON.stringify(codes));
-        }).catch(() => {});
-        fetch('/api/admin/clients').then(r => r.ok && r.json()).then(clients => {
-          if (Array.isArray(clients) && typeof localStorage !== 'undefined') localStorage.setItem('satset_clients_data', JSON.stringify(clients));
-        }).catch(() => {});
+        // Hydrate caches on background (admin only to prevent data leakage)
+        if (data.role === 'admin') {
+          fetch('/api/access-codes', {
+            headers: { 'x-access-code': input, 'Authorization': `Bearer ${input}` }
+          }).then(r => r.ok && r.json()).then(codes => {
+            if (Array.isArray(codes) && typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_CODES_KEY, JSON.stringify(codes));
+          }).catch(() => {});
+          fetch('/api/admin/clients', {
+            headers: { 'x-access-code': input, 'Authorization': `Bearer ${input}` }
+          }).then(r => r.ok && r.json()).then(clients => {
+            if (Array.isArray(clients) && typeof localStorage !== 'undefined') localStorage.setItem('satset_clients_data', JSON.stringify(clients));
+          }).catch(() => {});
+        }
 
         return data;
       }

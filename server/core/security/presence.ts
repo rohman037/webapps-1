@@ -1,7 +1,9 @@
+import crypto from 'crypto';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
 
 export interface ActivePresenceSession {
-  accessCode: string;
+  sessionHash: string;
+  accessCodeMasked: string;
   name: string;
   role: string;
   ip: string;
@@ -11,6 +13,18 @@ export interface ActivePresenceSession {
 }
 
 export const activePresenceSessions = new Map<string, ActivePresenceSession>();
+
+function maskAccessCode(code: string): string {
+  if (!code) return '••••';
+  const clean = code.trim();
+  if (clean.length <= 4) return '••••';
+  if (clean.length <= 8) return `${clean.slice(0, 2)}••••${clean.slice(-2)}`;
+  return `${clean.slice(0, 4)}••••${clean.slice(-3)}`;
+}
+
+function hashSessionKey(code: string, ip: string): string {
+  return crypto.createHash('sha256').update(`${code.trim().toUpperCase()}_${ip}`).digest('hex');
+}
 
 export function getActiveSessionsList(): ActivePresenceSession[] {
   const cutoff = Date.now() - 2 * 60 * 1000; // 2 minutes timeout
@@ -26,20 +40,24 @@ export function getActiveSessionsList(): ActivePresenceSession[] {
 }
 
 export function recordUserPresence(session: { accessCode: string; name?: string; role?: string; ip?: string; userAgent?: string }) {
-  const code = (session.accessCode || '').trim().toUpperCase();
+  const code = (session.accessCode || '').trim();
   if (!code) return;
-  const existing = activePresenceSessions.get(code);
+  const ip = session.ip || 'unknown';
+  const sessionKey = hashSessionKey(code, ip);
+  const existing = activePresenceSessions.get(sessionKey);
   const now = Date.now();
+
   const item: ActivePresenceSession = {
-    accessCode: code,
+    sessionHash: sessionKey.slice(0, 16),
+    accessCodeMasked: maskAccessCode(code),
     name: session.name || existing?.name || 'Klien Satset',
     role: session.role || existing?.role || 'user',
-    ip: session.ip || existing?.ip || 'unknown',
+    ip: ip || existing?.ip || 'unknown',
     userAgent: session.userAgent || existing?.userAgent || 'Web Browser',
     loginAt: existing?.loginAt || new Date().toISOString(),
     lastSeenAt: now,
   };
-  activePresenceSessions.set(code, item);
+  activePresenceSessions.set(sessionKey, item);
   try {
     broadcastLiveEvent({
       type: 'presence_updated',
@@ -48,11 +66,12 @@ export function recordUserPresence(session: { accessCode: string; name?: string;
   } catch (e) {}
 }
 
-export function removeUserPresence(accessCode: string) {
-  const code = (accessCode || '').trim().toUpperCase();
+export function removeUserPresence(accessCode: string, ip: string = 'unknown') {
+  const code = (accessCode || '').trim();
   if (!code) return;
-  if (activePresenceSessions.has(code)) {
-    activePresenceSessions.delete(code);
+  const sessionKey = hashSessionKey(code, ip);
+  if (activePresenceSessions.has(sessionKey)) {
+    activePresenceSessions.delete(sessionKey);
     try {
       broadcastLiveEvent({
         type: 'presence_updated',

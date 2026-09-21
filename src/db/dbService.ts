@@ -2,6 +2,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection as firestoreCollection } from 'firebase/firestore';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import firebaseConfig from '../../config/firebase-applet-config.json';
 import { FIRESTORE_COLLECTIONS } from './schema';
 
@@ -9,22 +10,43 @@ const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
 
 // Non-blocking debounced disk cache backup for high resilience & instant fallback
-const CACHE_FILE = path.join(process.cwd(), 'storage', 'local_db_store.json');
+const CACHE_DIR = path.join(process.cwd(), 'storage');
+const CACHE_FILE = path.join(CACHE_DIR, 'local_db_store.json');
 let localStore: Record<string, Record<string, any>> = {};
 let isDiskStoreDirty = false;
 let diskStoreTimer: NodeJS.Timeout | null = null;
 
+// Diagnostics tracker for database health monitoring
+export const dbDiagnostics = {
+  lastCheckTime: new Date().toISOString(),
+  status: 'INITIALIZING' as 'CONNECTED' | 'STANDBY_LOCAL' | 'INITIALIZING' | 'QUOTA_EXCEEDED',
+  lastError: null as { collection?: string; operation?: string; code?: string; message: string; timestamp: string } | null,
+  firestoreDatabaseId: firebaseConfig.firestoreDatabaseId || '(default)',
+  projectId: firebaseConfig.projectId,
+};
+
+// Ensure storage directory exists and load initial cache safely
 try {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
   if (fs.existsSync(CACHE_FILE)) {
     const raw = fs.readFileSync(CACHE_FILE, 'utf8');
     localStore = JSON.parse(raw);
   }
-} catch (e) {
+} catch (e: any) {
+  console.warn('[dbService] Notice loading initial local_db_store:', e?.message || e);
   localStore = {};
 }
 
 const persistLocalStore = (forceImmediate = false) => {
   isDiskStoreDirty = true;
+  if (!fs.existsSync(CACHE_DIR)) {
+    try {
+      fs.mkdirSync(CACHE_DIR, { recursive: true });
+    } catch (err) {}
+  }
+
   if (forceImmediate) {
     if (diskStoreTimer) {
       clearTimeout(diskStoreTimer);
@@ -33,7 +55,9 @@ const persistLocalStore = (forceImmediate = false) => {
     try {
       fs.writeFileSync(CACHE_FILE, JSON.stringify(localStore, null, 2), 'utf8');
       isDiskStoreDirty = false;
-    } catch (e) {}
+    } catch (e: any) {
+      console.error('[dbService] Error persisting local database store immediately:', e?.message || e);
+    }
     return;
   }
 
@@ -43,16 +67,52 @@ const persistLocalStore = (forceImmediate = false) => {
       if (isDiskStoreDirty) {
         fs.promises.writeFile(CACHE_FILE, JSON.stringify(localStore, null, 2), 'utf8')
           .then(() => { isDiskStoreDirty = false; })
-          .catch(() => {});
+          .catch((err) => {
+            console.error('[dbService] Error persisting local database store asynchronously:', err?.message || err);
+          });
       }
     }, 1500); // 1.5s non-blocking debounce
+  }
+};
+
+/**
+ * Timeout wrapper for Firestore operations to prevent hung connections
+ */
+const withTimeout = <T>(promise: Promise<T>, timeoutMs = 4000): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Firestore request timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+};
+
+/**
+ * Categorize database error for diagnostic logging
+ */
+const recordDbError = (colName: string, op: string, error: any) => {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = (error as any)?.code || (message.includes('PERMISSION_DENIED') ? 'permission-denied' : message.includes('Quota exceeded') ? 'resource-exhausted' : 'unknown');
+  
+  dbDiagnostics.lastError = {
+    collection: colName,
+    operation: op,
+    code,
+    message,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Only log detailed warnings for unexpected errors to keep server logs clean
+  const isExpectedServerOnly = ['apiKeys', 'apiKeyUsageLogs', 'apiKeyLogs', 'trackingEvents', 'bannedDevices', 'clients'].includes(colName);
+  if (!isExpectedServerOnly || code !== 'permission-denied') {
+    console.warn(`[dbService] [${op}] Firestore notice for '${colName}': ${message} -> Preserved in resilient local store.`);
   }
 };
 
 const safeGet = async (colName: string): Promise<any[]> => {
   try {
     const colRef = firestoreCollection(db, colName);
-    const snap = await getDocs(colRef);
+    const snap = await withTimeout(getDocs(colRef), 4000);
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     
     // Update local cache
@@ -63,9 +123,13 @@ const safeGet = async (colName: string): Promise<any[]> => {
       }
     }
     persistLocalStore();
-    return items;
+
+    // If Firestore returned items, return them. If Firestore was empty but localStore has entries, return localStore
+    if (items.length > 0) return items;
+    const localItems = Object.values(localStore[colName] || {});
+    return localItems.length > 0 ? localItems : items;
   } catch (e: any) {
-    console.warn(`[dbService] Fetching from Firestore failed for '${colName}', using local store fallback:`, e?.message || e);
+    recordDbError(colName, 'GET', e);
     const colData = localStore[colName] || {};
     return Object.values(colData);
   }
@@ -74,7 +138,7 @@ const safeGet = async (colName: string): Promise<any[]> => {
 const safeGetOne = async (colName: string, docId: string): Promise<any | null> => {
   try {
     const docRef = doc(db, colName, docId);
-    const snap = await getDoc(docRef);
+    const snap = await withTimeout(getDoc(docRef), 4000);
     if (snap.exists()) {
       const data = { id: snap.id, ...snap.data() };
       if (!localStore[colName]) localStore[colName] = {};
@@ -83,7 +147,7 @@ const safeGetOne = async (colName: string, docId: string): Promise<any | null> =
       return data;
     }
   } catch (e: any) {
-    console.warn(`[dbService] Fetching one '${colName}/${docId}' from Firestore failed, using local store fallback:`, e?.message || e);
+    recordDbError(colName, `GET_ONE/${docId}`, e);
   }
   return localStore[colName]?.[docId] || null;
 };
@@ -98,12 +162,12 @@ const safeSave = async (colName: string, item: any): Promise<any> => {
     localStore[colName][item.id] = { ...localStore[colName][item.id], ...item };
     persistLocalStore();
 
-    // Persist to Firestore
+    // Persist to Firestore with timeout
     const docRef = doc(db, colName, String(item.id));
-    await setDoc(docRef, item, { merge: true });
+    await withTimeout(setDoc(docRef, item, { merge: true }), 4000);
     return item;
   } catch (e: any) {
-    console.warn(`[dbService] Saving '${colName}' to Firestore failed, persisted to local store:`, e?.message || e);
+    recordDbError(colName, `SAVE/${item?.id}`, e);
     return item;
   }
 };
@@ -115,169 +179,243 @@ const safeDelete = async (colName: string, id: string): Promise<void> => {
       persistLocalStore();
     }
     const docRef = doc(db, colName, String(id));
-    await deleteDoc(docRef);
+    await withTimeout(deleteDoc(docRef), 4000);
   } catch (e: any) {
-    console.warn(`[dbService] Deleting '${colName}/${id}' from Firestore failed:`, e?.message || e);
+    recordDbError(colName, `DELETE/${id}`, e);
   }
 };
 
 export const testFirestoreHealth = async () => {
+  const startTime = Date.now();
   try {
-    const healthDoc = doc(db, '_healthCheck', 'ping');
-    await setDoc(healthDoc, { timestamp: Date.now() });
-    return { ok: true, status: 'CONNECTED' };
+    // Read probe on _healthCheck or packages (which is public-readable in firestore.rules)
+    const probeDoc = doc(db, '_healthCheck', 'connection');
+    await withTimeout(getDoc(probeDoc), 3500);
+    const latencyMs = Date.now() - startTime;
+    dbDiagnostics.status = 'CONNECTED';
+    dbDiagnostics.lastCheckTime = new Date().toISOString();
+    return {
+      ok: true,
+      status: 'CONNECTED',
+      mode: 'REMOTE_FIRESTORE',
+      latencyMs,
+      projectId: firebaseConfig.projectId,
+      firestoreDatabaseId: firebaseConfig.firestoreDatabaseId || '(default)',
+      message: 'Firestore connection verified and fully operational.',
+    };
   } catch (e: any) {
-    return { ok: true, status: 'STANDBY_LOCAL', detail: e?.message };
+    const latencyMs = Date.now() - startTime;
+    const errMessage = e instanceof Error ? e.message : String(e);
+    const isPermission = (e as any)?.code === 'permission-denied' || errMessage.includes('PERMISSION_DENIED');
+    const isQuota = (e as any)?.code === 'resource-exhausted' || errMessage.includes('Quota exceeded');
+    const isTimeout = errMessage.includes('timed out');
+    
+    const status = isQuota ? 'QUOTA_EXCEEDED' : isPermission ? 'PERMISSION_DENIED' : isTimeout ? 'TIMEOUT' : 'STANDBY_LOCAL';
+    dbDiagnostics.status = status as any;
+    dbDiagnostics.lastCheckTime = new Date().toISOString();
+
+    return {
+      ok: true,
+      status,
+      mode: 'RESILIENT_LOCAL_STORE',
+      latencyMs,
+      projectId: firebaseConfig.projectId,
+      firestoreDatabaseId: firebaseConfig.firestoreDatabaseId || '(default)',
+      detail: errMessage,
+      message: isQuota
+        ? 'Firestore quota exceeded. System is seamlessly serving from resilient local store.'
+        : 'Firestore in standby fallback. Resilient local storage active.',
+    };
   }
 };
 
+export const getDbDiagnostics = () => {
+  const summary: Record<string, number> = {};
+  for (const [col, docs] of Object.entries(localStore)) {
+    summary[col] = Object.keys(docs || {}).length;
+  }
+  return {
+    ...dbDiagnostics,
+    localCollectionsSummary: summary,
+    cacheFile: CACHE_FILE,
+    cacheFileExists: fs.existsSync(CACHE_FILE),
+  };
+};
+
 export const initDbSeed = async () => {
+  const packagesData = [
+    {
+      id: 'mingguan',
+      name: 'Akses Mingguan',
+      tagline: 'Uji coba semua fitur AI Creator selama 7 hari penuh.',
+      price: 49000,
+      durationDays: 7,
+      features: [
+        'Akses 5 Tool AI Satset',
+        'Generator Prompt Video 8K',
+        'Generator Prompt Foto Ultra HD',
+        'Video Frame Extractor',
+        'TikTok Downloader No Watermark',
+        'Bypass Kuota & Anti Limit Level 1'
+      ],
+      isPopular: false,
+      isActive: true,
+      badgeLabel: 'Hemat',
+      targetCategory: 'public',
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'bulanan',
+      name: 'Akses Bulanan (VIP)',
+      tagline: 'Pilihan favorit kreator konten & agensi digital.',
+      price: 149000,
+      durationDays: 30,
+      features: [
+        'Semua Fitur Paket Mingguan',
+        'Prioritas Server Kecepatan Tinggi',
+        'Bypass Kuota VIP & Anti Limit Max',
+        'Format Export JSON & TXT',
+        'Masa Aktif 30 Hari Penuh',
+        'Dukungan Admin Fast Response'
+      ],
+      isPopular: true,
+      isActive: true,
+      badgeLabel: 'Paling Populer',
+      targetCategory: 'public',
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'lifetime',
+      name: 'Ultra VIP Lifetime',
+      tagline: 'Akses seumur hidup tanpa perpanjangan biaya bulanan.',
+      price: 999000,
+      durationDays: 36500,
+      features: [
+        'Akses Selamanya Tanpa Batas',
+        'Semua Fitur VIP + Update Masa Depan',
+        'Server Dedicated AI Engine',
+        'Grup Komunitas Exclusive VIP',
+        'Lisensi Komersial Konten Kreator'
+      ],
+      isPopular: false,
+      isActive: true,
+      badgeLabel: 'Sultan VIP',
+      targetCategory: 'public',
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'upgrade_vip',
+      name: 'Perpanjang / Upgrade Member VIP',
+      tagline: 'Penawaran khusus member terdaftar untuk perpanjangan atau upgrade akun.',
+      price: 99000,
+      durationDays: 30,
+      features: [
+        'Harga Khusus Perpanjangan Member',
+        'Semua Fitur VIP + Priority Server',
+        'Bypass Kuota & Anti Limit Max',
+        'Akses Bebas Pemblokiran',
+        'Dukungan Langsung via Admin VIP'
+      ],
+      isPopular: false,
+      isActive: true,
+      badgeLabel: 'Khusus Member',
+      targetCategory: 'member',
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  const defaultClients = [
+    {
+      id: 'cli_001',
+      accessCode: 'SATSET-882194',
+      name: 'Rizky Ramadhan',
+      whatsapp: '081234567890',
+      email: 'rizky@gmail.com',
+      packageId: 'bulanan',
+      packageName: 'Akses Bulanan (VIP)',
+      price: 149000,
+      startDate: '2026-08-01T10:00:00.000Z',
+      expiryDate: '2026-08-31T10:00:00.000Z',
+      status: 'active',
+      type: 'standard',
+      role: 'user',
+      allowedFeatures: [],
+      maxDailyTokens: 50,
+      usageCount: 0,
+      lastLoginAt: Date.parse('2026-08-06T08:00:00.000Z'),
+      toolUsage: { tiktokDownloader: 12, contentIdeas: 8, videoToPrompt: 15, photoPrompt: 6, frameExtractor: 4 },
+      createdAt: '2026-08-01T10:00:00.000Z'
+    },
+    {
+      id: 'cli_002',
+      accessCode: 'SATSET-331209',
+      name: 'Budi Santoso',
+      whatsapp: '085711223344',
+      email: 'budi.santoso@yahoo.com',
+      packageId: 'mingguan',
+      packageName: 'Akses Mingguan',
+      price: 49000,
+      startDate: '2026-08-02T12:00:00.000Z',
+      expiryDate: '2026-08-09T12:00:00.000Z',
+      status: 'expiring_soon',
+      type: 'standard',
+      role: 'user',
+      allowedFeatures: [],
+      maxDailyTokens: 50,
+      usageCount: 0,
+      lastLoginAt: Date.parse('2026-08-05T14:30:00.000Z'),
+      toolUsage: { tiktokDownloader: 5, contentIdeas: 3, videoToPrompt: 4, photoPrompt: 2, frameExtractor: 1 },
+      createdAt: '2026-08-02T12:00:00.000Z'
+    }
+  ];
+
+  // 1. Ensure local store is primed immediately so client requests never encounter empty collections
+  const pkgColName = FIRESTORE_COLLECTIONS.PACKAGES || 'packages';
+  if (!localStore[pkgColName] || Object.keys(localStore[pkgColName]).length === 0) {
+    localStore[pkgColName] = {};
+    for (const p of packagesData) {
+      localStore[pkgColName][p.id] = p;
+    }
+  }
+
+  const clientColName = FIRESTORE_COLLECTIONS.CLIENTS || 'clients';
+  if (!localStore[clientColName] || Object.keys(localStore[clientColName]).length === 0) {
+    localStore[clientColName] = {};
+    for (const c of defaultClients) {
+      localStore[clientColName][c.id] = c;
+    }
+  }
+  persistLocalStore(true);
+
+  // 2. Attempt remote Firestore synchronization with non-blocking error handling
   try {
-    const pkgCol = firestoreCollection(db, FIRESTORE_COLLECTIONS.PACKAGES || 'packages');
-    const pkgSnap = await getDocs(pkgCol);
+    const pkgCol = firestoreCollection(db, pkgColName);
+    const pkgSnap = await withTimeout(getDocs(pkgCol), 3000);
     if (pkgSnap.empty) {
       console.log('[DB Seed] Seeding initial subscription packages to Firestore...');
-      const packagesData = [
-        {
-          id: 'mingguan',
-          name: 'Akses Mingguan',
-          tagline: 'Uji coba semua fitur AI Creator selama 7 hari penuh.',
-          price: 49000,
-          durationDays: 7,
-          features: [
-            'Akses 5 Tool AI Satset',
-            'Generator Prompt Video 8K',
-            'Generator Prompt Foto Ultra HD',
-            'Video Frame Extractor',
-            'TikTok Downloader No Watermark',
-            'Bypass Kuota & Anti Limit Level 1'
-          ],
-          isPopular: false,
-          isActive: true,
-          badgeLabel: 'Hemat',
-          targetCategory: 'public',
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: 'bulanan',
-          name: 'Akses Bulanan (VIP)',
-          tagline: 'Pilihan favorit kreator konten & agensi digital.',
-          price: 149000,
-          durationDays: 30,
-          features: [
-            'Semua Fitur Paket Mingguan',
-            'Prioritas Server Kecepatan Tinggi',
-            'Bypass Kuota VIP & Anti Limit Max',
-            'Format Export JSON & TXT',
-            'Masa Aktif 30 Hari Penuh',
-            'Dukungan Admin Fast Response'
-          ],
-          isPopular: true,
-          isActive: true,
-          badgeLabel: 'Paling Populer',
-          targetCategory: 'public',
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: 'lifetime',
-          name: 'Ultra VIP Lifetime',
-          tagline: 'Akses seumur hidup tanpa perpanjangan biaya bulanan.',
-          price: 999000,
-          durationDays: 36500,
-          features: [
-            'Akses Selamanya Tanpa Batas',
-            'Semua Fitur VIP + Update Masa Depan',
-            'Server Dedicated AI Engine',
-            'Grup Komunitas Exclusive VIP',
-            'Lisensi Komersial Konten Kreator'
-          ],
-          isPopular: false,
-          isActive: true,
-          badgeLabel: 'Sultan VIP',
-          targetCategory: 'public',
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: 'upgrade_vip',
-          name: 'Perpanjang / Upgrade Member VIP',
-          tagline: 'Penawaran khusus member terdaftar untuk perpanjangan atau upgrade akun.',
-          price: 99000,
-          durationDays: 30,
-          features: [
-            'Harga Khusus Perpanjangan Member',
-            'Semua Fitur VIP + Priority Server',
-            'Bypass Kuota & Anti Limit Max',
-            'Akses Bebas Pemblokiran',
-            'Dukungan Langsung via Admin VIP'
-          ],
-          isPopular: false,
-          isActive: true,
-          badgeLabel: 'Khusus Member',
-          targetCategory: 'member',
-          updatedAt: new Date().toISOString()
-        }
-      ];
       for (const p of packagesData) {
-        await setDoc(doc(db, FIRESTORE_COLLECTIONS.PACKAGES || 'packages', p.id), p);
+        await setDoc(doc(db, pkgColName, p.id), p);
       }
       console.log('[DB Seed] Packages successfully seeded to Firestore.');
     }
+  } catch (err: any) {
+    // Gracefully handled; local store fallback is already active
+    recordDbError(pkgColName, 'SEED_PACKAGES', err);
+  }
 
-    const clientCol = firestoreCollection(db, FIRESTORE_COLLECTIONS.CLIENTS || 'clients');
-    const clientSnap = await getDocs(clientCol);
+  try {
+    const clientCol = firestoreCollection(db, clientColName);
+    const clientSnap = await withTimeout(getDocs(clientCol), 3000);
     if (clientSnap.empty) {
       console.log('[DB Seed] Seeding initial clients to Firestore...');
-      const defaultClients = [
-        {
-          id: 'cli_001',
-          accessCode: 'SATSET-882194',
-          name: 'Rizky Ramadhan',
-          whatsapp: '081234567890',
-          email: 'rizky@gmail.com',
-          packageId: 'bulanan',
-          packageName: 'Akses Bulanan (VIP)',
-          price: 149000,
-          startDate: '2026-08-01T10:00:00.000Z',
-          expiryDate: '2026-08-31T10:00:00.000Z',
-          status: 'active',
-          type: 'standard',
-          role: 'user',
-          allowedFeatures: [],
-          maxDailyTokens: 50,
-          usageCount: 0,
-          lastLoginAt: Date.parse('2026-08-06T08:00:00.000Z'),
-          toolUsage: { tiktokDownloader: 12, contentIdeas: 8, videoToPrompt: 15, photoPrompt: 6, frameExtractor: 4 },
-          createdAt: '2026-08-01T10:00:00.000Z'
-        },
-        {
-          id: 'cli_002',
-          accessCode: 'SATSET-331209',
-          name: 'Budi Santoso',
-          whatsapp: '085711223344',
-          email: 'budi.santoso@yahoo.com',
-          packageId: 'mingguan',
-          packageName: 'Akses Mingguan',
-          price: 49000,
-          startDate: '2026-08-02T12:00:00.000Z',
-          expiryDate: '2026-08-09T12:00:00.000Z',
-          status: 'expiring_soon',
-          type: 'standard',
-          role: 'user',
-          allowedFeatures: [],
-          maxDailyTokens: 50,
-          usageCount: 0,
-          lastLoginAt: Date.parse('2026-08-05T14:30:00.000Z'),
-          toolUsage: { tiktokDownloader: 5, contentIdeas: 3, videoToPrompt: 4, photoPrompt: 2, frameExtractor: 1 },
-          createdAt: '2026-08-02T12:00:00.000Z'
-        }
-      ];
       for (const c of defaultClients) {
-        await setDoc(doc(db, FIRESTORE_COLLECTIONS.CLIENTS || 'clients', c.id), c);
+        await setDoc(doc(db, clientColName, c.id), c);
       }
       console.log('[DB Seed] Clients successfully seeded to Firestore.');
     }
-  } catch (err) {
-    console.warn('[DB Seed] Warning during seeding:', err);
+  } catch (err: any) {
+    // Gracefully handled; local store fallback is already active
+    recordDbError(clientColName, 'SEED_CLIENTS', err);
   }
 };
 
@@ -337,11 +475,25 @@ export const dbSaveBannedDevice = async (item: any) => {
 };
 export const dbDeleteBannedDevice = async (id: string) => safeDelete(FIRESTORE_COLLECTIONS.BANNED_DEVICES || 'bannedDevices', id);
 
+export const hashAccessCode = (code: string): string => {
+  if (!code) return '';
+  return crypto.createHash('sha256').update(code.trim().toUpperCase()).digest('hex');
+};
+
 export const dbSaveClient = async (item: any) => {
+  const sanitizeClient = (raw: any) => {
+    if (!raw) return raw;
+    const copy = { ...raw };
+    if (copy.accessCode && !copy.accessCodeHash) {
+      copy.accessCodeHash = hashAccessCode(copy.accessCode);
+    }
+    return copy;
+  };
+
   if (Array.isArray(item)) {
-    for (const i of item) await safeSave(FIRESTORE_COLLECTIONS.CLIENTS || 'clients', i);
+    for (const i of item) await safeSave(FIRESTORE_COLLECTIONS.CLIENTS || 'clients', sanitizeClient(i));
   } else {
-    await safeSave(FIRESTORE_COLLECTIONS.CLIENTS || 'clients', item);
+    await safeSave(FIRESTORE_COLLECTIONS.CLIENTS || 'clients', sanitizeClient(item));
   }
 };
 export const dbDeleteClient = async (id: string) => safeDelete(FIRESTORE_COLLECTIONS.CLIENTS || 'clients', id);
@@ -461,10 +613,24 @@ export const dbAddApiKeyLog = async (item: any) => safeSave(FIRESTORE_COLLECTION
 export const dbAddAuditLog = async (item: any) => safeSave(FIRESTORE_COLLECTIONS.AUDIT_LOGS || 'auditLogs', item);
 
 export const dbSaveAccessCode = async (item: any) => {
+  const sanitizeAccessCode = (raw: any) => {
+    if (!raw) return raw;
+    const copy = { ...raw };
+    const plain = copy.code || copy.accessCode;
+    if (plain) {
+      copy.accessCodeHash = hashAccessCode(plain);
+      // Retain masked representation for admin UI verification without exposing raw credential
+      copy.codeMasked = plain.length > 8 ? `${plain.slice(0, 4)}••••${plain.slice(-3)}` : '••••••••';
+      // Ensure raw code is not stored in sensitive credential storage
+      copy.code = copy.accessCodeHash;
+    }
+    return copy;
+  };
+
   if (Array.isArray(item)) {
-    for (const i of item) await safeSave(FIRESTORE_COLLECTIONS.ACCESS_CODES || 'accessCodes', i);
+    for (const i of item) await safeSave(FIRESTORE_COLLECTIONS.ACCESS_CODES || 'accessCodes', sanitizeAccessCode(i));
   } else {
-    await safeSave(FIRESTORE_COLLECTIONS.ACCESS_CODES || 'accessCodes', item);
+    await safeSave(FIRESTORE_COLLECTIONS.ACCESS_CODES || 'accessCodes', sanitizeAccessCode(item));
   }
 };
 export const dbDeleteAccessCode = async (id: string) => safeDelete(FIRESTORE_COLLECTIONS.ACCESS_CODES || 'accessCodes', id);

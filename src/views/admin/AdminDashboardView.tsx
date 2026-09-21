@@ -24,10 +24,8 @@ import ApiKeyManagementPanel from './ApiKeyManagementPanel';
 import QrisManagementPanel from './QrisManagementPanel';
 import PaymentVerificationPanel from './PaymentVerificationPanel';
 import ContactSettingsPanel from './ContactSettingsPanel';
-import LoginActivityPanel from './LoginActivityPanel';
-import LiveUserGenerationMonitorPanel from './LiveUserGenerationMonitorPanel';
 import TrendVideoManagementPanel from './TrendVideoManagementPanel';
-import { logoutUser, MASTER_ADMIN_EMAIL } from '../../lib/auth';
+import { logoutUser, getUserSession } from '../../lib/auth';
 import { subscribeLiveGenerationEvents, ActiveGenerationItem } from '../../events/generationEvent';
 import { getAllTransactions, syncTransactionsFromServer } from '../../lib/payment';
 import { getClients } from '../../lib/admin/clients';
@@ -46,13 +44,11 @@ export default function AdminDashboardView({
   const [activeTab, setActiveTab] = useState<
     | 'overview'
     | 'clients'
-    | 'login_activity'
     | 'packages'
     | 'apikeys'
     | 'payment_queue'
     | 'qris'
     | 'contact'
-    | 'live_generation'
     | 'trend_videos'
   >('overview');
 
@@ -134,7 +130,6 @@ export default function AdminDashboardView({
       title: 'UTAMA & PERFORMA',
       items: [
         { id: 'overview', label: 'Ringkasan', icon: BarChart2 },
-        { id: 'live_generation', label: 'Pemantau Generasi Realtime', icon: Radio },
         { id: 'trend_videos', label: 'Trend Video', icon: TrendingUp },
       ]
     },
@@ -142,7 +137,6 @@ export default function AdminDashboardView({
       title: 'KLIEN & TRANSAKSI',
       items: [
         { id: 'clients', label: 'Monitoring Client', icon: Users, badge: activeClientsCount > 0 ? activeClientsCount : null, badgeColor: 'bg-slate-100 text-slate-700' },
-        { id: 'login_activity', label: 'Log Login', icon: Key },
         { id: 'payment_queue', label: 'Verifikasi Bayar', icon: Clock, badge: pendingPaymentCount > 0 ? pendingPaymentCount : null, badgeColor: 'bg-amber-500 text-white animate-pulse' },
       ]
     },
@@ -188,7 +182,9 @@ export default function AdminDashboardView({
                   Super Admin
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-mono hidden sm:block">{MASTER_ADMIN_EMAIL}</p>
+              <p className="text-[11px] text-slate-400 font-mono hidden sm:block">
+                {getUserSession()?.email || 'Administrator (Verified)'}
+              </p>
             </div>
           </div>
 
@@ -345,12 +341,6 @@ export default function AdminDashboardView({
               </ErrorBoundary>
             )}
 
-            {activeTab === 'login_activity' && (
-              <ErrorBoundary panelName="Log Aktivitas Login">
-                <LoginActivityPanel />
-              </ErrorBoundary>
-            )}
-
             {activeTab === 'packages' && (
               <ErrorBoundary panelName="Manajemen Paket & Harga">
                 <PackagePricingPanel />
@@ -378,12 +368,6 @@ export default function AdminDashboardView({
             {activeTab === 'contact' && (
               <ErrorBoundary panelName="Pengaturan WhatsApp & Kontak">
                 <ContactSettingsPanel />
-              </ErrorBoundary>
-            )}
-
-            {activeTab === 'live_generation' && (
-              <ErrorBoundary panelName="Pemantau Generasi Realtime">
-                <LiveUserGenerationMonitorPanel />
               </ErrorBoundary>
             )}
 

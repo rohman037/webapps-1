@@ -59,7 +59,7 @@ async function startServer() {
     message: { error: 'Terlalu banyak permintaan (Rate limit). Silakan coba lagi sebentar lagi.' },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false },
+    validate: { default: false },
     keyGenerator: (req) => {
       const clientCode = (req.headers['x-client-access-code'] as string) || '';
       if (clientCode && clientCode.trim()) return `client_${clientCode.trim()}`;

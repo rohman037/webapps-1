@@ -251,3 +251,65 @@ export async function updateClientsController(req: Request, res: Response) {
     return handleApiError(res, err);
   }
 }
+
+// Firebase Token Verification with Custom Claims
+export async function verifyFirebaseTokenController(req: Request, res: Response) {
+  try {
+    const { idToken } = req.body || {};
+    if (!idToken) {
+      return res.status(400).json({ success: false, error: 'Parameter "idToken" diperlukan.' });
+    }
+    const { adminAuth } = await import('@/src/lib/firebase-admin');
+    const { validateAdminCredential } = await import('@/server/core/security/secretManager');
+    const { setUserCustomClaims, ROLE_PERMISSIONS } = await import('@/server/core/security/customClaimsService');
+    type UserRole = import('@/server/core/security/customClaimsService').UserRole;
+
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    const email = (decoded.email || '').toLowerCase();
+
+    let role: UserRole = (decoded.role || (decoded.admin ? 'admin' : 'user')) as UserRole;
+    if (email) {
+      const adminValidation = validateAdminCredential(email);
+      if (adminValidation.isValid) {
+        role = adminValidation.role === 'owner' ? 'owner' : 'admin';
+        if (decoded.role !== role) {
+          await setUserCustomClaims(decoded.uid, role);
+        }
+      }
+    }
+
+    const validRole: UserRole = ['owner', 'admin', 'moderator', 'premium', 'user'].includes(role)
+      ? role
+      : 'user';
+
+    const permissions = decoded.permissions || ROLE_PERMISSIONS[validRole] || ['access_standard_ai'];
+
+    return res.json({
+      success: true,
+      user: {
+        uid: decoded.uid,
+        email: decoded.email,
+        name: decoded.name || 'User',
+        role: validRole,
+        permissions,
+      },
+    });
+  } catch (err: any) {
+    return handleApiError(res, err);
+  }
+}
+
+// Set User Role (Custom Claims)
+export async function setUserRoleController(req: Request, res: Response) {
+  try {
+    const { uid, role, permissions } = req.body || {};
+    if (!uid || !role) {
+      return res.status(400).json({ success: false, error: 'Parameter "uid" dan "role" diperlukan.' });
+    }
+    const { setUserCustomClaims } = await import('@/server/core/security/customClaimsService');
+    const result = await setUserCustomClaims(uid, role, permissions);
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return handleApiError(res, err);
+  }
+}

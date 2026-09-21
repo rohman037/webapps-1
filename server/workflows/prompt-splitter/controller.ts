@@ -60,6 +60,7 @@ export async function generatePromptController(req: Request, res: Response) {
       includeCinematics = true,
       sourceCaption = '',
       sourceUrl = '',
+      actualDuration,
     } = req.body;
 
     if (!base64Data || !mimeType) {
@@ -80,6 +81,7 @@ export async function generatePromptController(req: Request, res: Response) {
       includeCinematics,
       sourceCaption,
       sourceUrl,
+      actualDuration: typeof actualDuration === 'number' ? actualDuration : undefined,
       customApiKey,
       clientAccessCode,
       useCache,

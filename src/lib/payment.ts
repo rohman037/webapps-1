@@ -3,6 +3,7 @@ import { db } from './firebase';
 import { addSpecificAccessCode } from './auth';
 import { getClients, saveClient, calculateClientStatus } from "./admin/clients";
 import { getPackages } from './admin/packages';
+import { getAdminHeaders } from './admin/adminApi';
 
 export type TransactionStatus = 'PENDING_PROOF' | 'AWAITING_VERIFICATION' | 'APPROVED' | 'REJECTED';
 
@@ -193,7 +194,9 @@ export function findTransaction(query: string): Transaction | null {
 
 export async function syncTransactionsFromServer(): Promise<Transaction[]> {
   try {
-    const res = await fetch('/api/transactions');
+    const res = await fetch('/api/transactions', {
+      headers: getAdminHeaders(),
+    });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -497,7 +500,7 @@ export function approveTransaction(trxId: string): Transaction | null {
   }
   fetch('/api/transactions/approve', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAdminHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       id: trxId,
       accessCode,
@@ -530,7 +533,7 @@ export function rejectTransaction(trxId: string, reason: string): Transaction | 
   }
   fetch('/api/transactions/reject', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAdminHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       id: trxId,
       rejectReason: current[index].rejectReason,

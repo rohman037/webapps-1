@@ -30,6 +30,16 @@ export interface LLMGatewayRequestOptions {
   targetTier?: 'flagship' | 'tier2' | 'tier3' | 'user_key';
   endpoint?: string;
   streaming?: boolean;
+  isSingleRequestMode?: boolean;
+}
+
+// Single-request instrumentation counter for Video to Prompt audit
+export let videoPromptAiRequestCounter = 0;
+export function resetVideoPromptAiRequestCounter() {
+  videoPromptAiRequestCounter = 0;
+}
+export function getVideoPromptAiRequestCounter() {
+  return videoPromptAiRequestCounter;
 }
 
 export interface LLMGatewayResponse {
@@ -602,6 +612,9 @@ export class LLMGateway {
 
     // Build intelligent cascading model list across ALL available models
     const toolLower = inferredTool.toLowerCase();
+    const isVideoPromptTool = toolLower.includes('video to prompt') || toolLower.includes('video prompt') || toolLower.includes('ekstrak prompt');
+    const isSingleRequestMode = Boolean(options.isSingleRequestMode || isVideoPromptTool);
+
     const isImageGenTool = (toolLower.includes('image generation') || toolLower.includes('generate image') || endpoint.includes('generate-image') || toolLower.includes('nano banana image')) && !toolLower.includes('prompt');
     const isPhotoPromptTool = toolLower.includes('photo prompt') || endpoint.includes('generate-photo-prompt') || toolLower.includes('prompt foto');
     const isAudioTranscribeTool = toolLower.includes('transcribe') || endpoint.includes('transcribe');
@@ -640,7 +653,12 @@ export class LLMGateway {
 
     // If a model is specified (user explicit or tool preferred), place it first in the hierarchy; otherwise cascade from top priority
     let candidateModels: string[];
-    if (options.model && (options.isUserExplicitChoice || options.model !== TOP_MODEL_ORDER[0])) {
+    if (isSingleRequestMode) {
+      // In single-request mode for Video to Prompt: STRICTLY 1 model, NO cascade
+      const chosenModel = options.model ? normalizeGeminiModel(options.model) : (baseOrderedHierarchy[0] || 'gemini-3.1-pro-preview');
+      candidateModels = [chosenModel];
+      logger.info(`[Video to Prompt Single Mode] Locked to single model: ${chosenModel} (no cascade, no retry)`);
+    } else if (options.model && (options.isUserExplicitChoice || options.model !== TOP_MODEL_ORDER[0])) {
       const userPrimary = normalizeGeminiModel(options.model);
       candidateModels = Array.from(new Set([userPrimary, ...baseOrderedHierarchy])).filter(Boolean);
     } else {
@@ -662,9 +680,10 @@ export class LLMGateway {
     let lastError: any = null;
     let totalRetries = 0;
 
-    // Generous Request-Level Budgeting (90s) to allow traversing all 6 candidate keys
+    // Generous Request-Level Budgeting (90s) to allow traversing candidate keys
     const MAX_TOTAL_EXECUTION_TIME_MS = 90000;
-    const MAX_KEY_HOPS_PER_REQUEST = Math.min(6, keyCandidates.length); // Max 6 key transitions per request
+    // For single-request mode: exactly 1 key evaluation, no key hopping!
+    const MAX_KEY_HOPS_PER_REQUEST = isSingleRequestMode ? 1 : Math.min(6, keyCandidates.length);
     const evaluatedKeyCandidates = keyCandidates.slice(0, MAX_KEY_HOPS_PER_REQUEST);
 
     keyCandidateLoop: for (let kIdx = 0; kIdx < evaluatedKeyCandidates.length; kIdx++) {
@@ -755,7 +774,7 @@ export class LLMGateway {
         }
 
         let modelAttempts = 0;
-        const maxModelAttempts = 2;
+        const maxModelAttempts = isSingleRequestMode ? 1 : 2;
 
         while (modelAttempts < maxModelAttempts) {
           if (Date.now() - overallStartTime >= MAX_TOTAL_EXECUTION_TIME_MS) {
@@ -780,6 +799,11 @@ export class LLMGateway {
             logger.info(
               `[LLM Gateway Request] Key #${kIdx + 1}/${evaluatedKeyCandidates.length} (${keyMasked} [${candidate.source}]), Model: ${targetModel}, Attempt: ${modelAttempts} (Timeout: ${perAttemptTimeoutMs}ms)...`
             );
+
+            if (isSingleRequestMode) {
+              videoPromptAiRequestCounter++;
+              logger.info(`[Video to Prompt Single Mode] Physical AI Request #${videoPromptAiRequestCounter} initiated for model: ${targetModel}`);
+            }
 
             // Execute generateContent wrapped with strict timeout promise
             const generatePromise = aiInstance.models.generateContent({
@@ -855,6 +879,25 @@ export class LLMGateway {
             logger.warn(
               `[LLM Gateway Warning] Key ${keyMasked}, Model: ${targetModel} attempt ${modelAttempts} failed (${latencyMs}ms): ${errMsg}`
             );
+
+            if (isSingleRequestMode) {
+              const isTimeout = errMsg.includes('LLM_TIMEOUT') || errMsg.includes('DEADLINE_EXCEEDED') || errMsg.includes('ETIMEDOUT');
+              const isNotFound = status === 404 || errMsg.includes('404') || errMsg.includes('NOT_FOUND') || errMsg.includes('is not found');
+              const isHighDemandOrUnavailable = status === 503 || errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('overloaded');
+
+              let cleanMessage = 'Analisis video gagal karena model AI tidak dapat memproses video ini.';
+              if (isTimeout) {
+                cleanMessage = 'Analisis video timeout. Silakan gunakan video yang lebih pendek atau coba lagi.';
+              } else if (isNotFound || isHighDemandOrUnavailable) {
+                cleanMessage = 'Model AI video sedang tidak tersedia.';
+              } else if (errMsg.includes('INVALID_ARGUMENT') || errMsg.includes('mimeType') || errMsg.includes('Unsupported MIME type') || errMsg.includes('video')) {
+                cleanMessage = 'File video tidak valid.';
+              }
+              logger.error(`[Video to Prompt Single Mode] Failed on single attempt, terminating immediately: ${errMsg}`);
+              const finalError: any = new Error(cleanMessage);
+              finalError.statusCode = status || 500;
+              throw finalError;
+            }
 
             const isTimeout = errMsg.includes('LLM_TIMEOUT') || errMsg.includes('DEADLINE_EXCEEDED') || errMsg.includes('ETIMEDOUT');
 

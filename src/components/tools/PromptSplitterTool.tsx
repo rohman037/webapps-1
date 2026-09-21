@@ -117,7 +117,7 @@ export default function PromptSplitterTool() {
       });
     } catch (err: any) {
       console.error(err);
-      reportActiveGenerationStatus(activeId, 'completed');
+      reportActiveGenerationStatus(activeId, 'failed');
       const latencyMs = Date.now() - startTime;
       const errMsg = err.message || 'Terjadi kesalahan saat memecah prompt.';
       setError(errMsg);
