@@ -3,7 +3,7 @@ import { promptResponseCache, PROMPT_CACHE_TTL_MS, recordExecutionAndUpgrade } f
 import { logger } from '@/server/core/utils/logger';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
-import { runIndonesianQueryCouncil } from './agent';
+import { runIndonesianQueryCouncil } from './agents/query-council';
 import { GenerateContentIdeasOptions } from './types';
 import { extractVideoDNA } from './agents/video-dna-extractor';
 import { analyzeProductIntelligence } from './agents/product-intelligence';

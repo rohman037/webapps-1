@@ -10,7 +10,7 @@ import {
   User,
   Check,
 } from 'lucide-react';
-import { SafeLearningItem } from '@/platform_intelligence/agents/safeLearningQueue';
+import { SafeLearningItem } from '@/server/core/intelligence/safeLearningQueue';
 
 interface SafeLearningReviewCardProps {
   item: SafeLearningItem;

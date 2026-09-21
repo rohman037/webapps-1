@@ -13,7 +13,7 @@ import {
   rollbackGrowthScalingVersion,
   setFullAutoMode,
 } from '@/src/lib/admin/growthScaling';
-import { runAutoAgentFactory } from '@/platform_intelligence/agents/agentAutoAgentFactory';
+import { runAutoAgentFactory } from '@/server/core/intelligence/agentAutoAgentFactory';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
 
 export async function getSystemMemoryService() {

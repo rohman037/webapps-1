@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { resolveApiKey } from '../routing/apiKeyResolver';
+import { resolveApiKey } from '../llm/routing/apiKeyResolver';
 import { analyzeUserGrowth, UserGrowthMetrics } from './agentUserGrowthAnalyst';
 import { evaluateGrowthAndScale, getGrowthScalingState, ScalingDecision } from '@/src/lib/admin/growthScaling';
 import { saveAiAgent, getAiAgents, AiAgentItem } from '@/src/lib/admin/aiAgents';

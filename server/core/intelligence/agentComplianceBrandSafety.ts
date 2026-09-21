@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { resolveApiKey } from '../routing/apiKeyResolver';
+import { resolveApiKey } from '../llm/routing/apiKeyResolver';
 
 export interface ComplianceBrandSafetyResult {
   isCompliant: boolean;

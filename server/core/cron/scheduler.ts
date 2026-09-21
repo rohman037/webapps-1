@@ -1,8 +1,8 @@
 import cron from 'node-cron';
 import { dbGetApiKeys, dbGetClients, dbGetTransactions, dbGetGrowthState } from '@/src/db/dbService';
-import { runAutoAgentFactory } from '@/platform_intelligence/agents/agentAutoAgentFactory';
-import { analyzeUserGrowth } from '@/platform_intelligence/agents/agentUserGrowthAnalyst';
-import { optimizeCostAndTiers } from '@/platform_intelligence/agents/agentCostTierOptimizer';
+import { runAutoAgentFactory } from '@/server/core/intelligence/agentAutoAgentFactory';
+import { analyzeUserGrowth } from '@/server/core/intelligence/agentUserGrowthAnalyst';
+import { optimizeCostAndTiers } from '@/server/core/intelligence/agentCostTierOptimizer';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
 import { logger } from '@/server/core/utils/logger';
 

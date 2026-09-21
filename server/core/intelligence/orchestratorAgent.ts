@@ -1,7 +1,7 @@
 import { GenerationEvent } from '@/src/events/generationEvent';
 import { learningSync } from '@/src/lib/learningSync';
 import { enqueueNewCandidate } from './safeLearningQueue';
-import { LLMGateway } from '../routing/llmGateway';
+import { LLMGateway } from '../llm/routing/llmGateway';
 
 export interface OrchestrationResult {
   metadataSeo: {

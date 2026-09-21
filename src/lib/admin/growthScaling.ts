@@ -1,4 +1,4 @@
-import { UserGrowthMetrics } from '@/platform_intelligence/agents/agentUserGrowthAnalyst';
+import { UserGrowthMetrics } from '@/server/core/intelligence/agentUserGrowthAnalyst';
 import { AiAgentItem, getAiAgents, saveAiAgents } from './aiAgents';
 import { logAdminAction } from './auditLog';
 

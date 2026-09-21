@@ -21,9 +21,9 @@ import {
   getAutoApproveState, 
   setAutoApproveState, 
   SafeLearningItem 
-} from '@/platform_intelligence/agents/safeLearningQueue';
+} from '@/server/core/intelligence/safeLearningQueue';
 import { GenerationEvent } from '../../events/generationEvent';
-import { getAutoTrainerState, runAutoTrainingJob, AutoTrainerState } from '@/platform_intelligence/agents/autoTrainer';
+import { getAutoTrainerState, runAutoTrainingJob, AutoTrainerState } from '@/server/core/intelligence/autoTrainer';
 
 export default function LearningReviewPanel() {
   const [queue, setQueue] = useState<SafeLearningItem[]>([]);

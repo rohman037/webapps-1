@@ -1,6 +1,6 @@
 // [REALTIME-FIX] Live Generation Tracking & Multi-Agent Event Bus using sseManager Singleton
 import { ContentCategory } from './categorize';
-import { runContentCategorizerPipeline } from '@/platform_intelligence/agents/agentContentCategorizer';
+import { runContentCategorizerPipeline } from '@/server/core/intelligence/agentContentCategorizer';
 import { sseManager } from '../lib/sseManager';
 
 export interface GenerationEvent {

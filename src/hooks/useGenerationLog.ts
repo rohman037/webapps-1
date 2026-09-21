@@ -5,7 +5,7 @@ import { getClients } from '../lib/admin/clients';
 import { categorizeContent } from '../events/categorize';
 import { getTierForModel } from '@/server/core/llm/routing/modelRouter';
 import { getAntiLimitConfig } from '../lib/antiLimit';
-import { runContentAnalysisJob } from '@/platform_intelligence/agents/contentAnalysisJob';
+import { runContentAnalysisJob } from '@/server/core/intelligence/contentAnalysisJob';
 
 export interface LogGenerationParams {
   tool: 'idea_konten' | 'video_to_prompt' | 'prompt_foto' | 'tiktok_downloader' | 'ekstraktor_frame';
