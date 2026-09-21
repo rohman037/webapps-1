@@ -10,10 +10,9 @@ export * from './routing/llmGateway';
 export * from './routing/apiKeyResolver';
 
 // Workflow Agents
-export * from '@/src/workflows/viral-replica/adaptationAgent';
-export * from '@/src/workflows/viral-replica/validatorAgent';
-export * from '@/src/workflows/content-ideas/agentIndonesianQueryCouncil';
-export * from '@/src/workflows/photo-prompt-generator/agentStructuredPromptArchitect';
+export * from '@/server/workflows/content-ideas/agents/query-council';
+export * from '@/server/workflows/photo-prompt-generator/agents/prompt-architect';
+export * from '@/server/workflows/content-ideas/validators/output-validator';
 
 // Cross-Platform Agents & Pipelines
 export * from './agents/aeoAgentPipeline';
