@@ -35,6 +35,11 @@ export const MODEL_TIERS = {
     'gemini-3.8-flash',
     'gemini-3.5-flash-lite',
   ],
+  videoAnalysis: [
+    'gemini-3.6-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
+  ],
   specialized: [
     // Audio Transcription Tasks (Primary)
     'gemini-3.5-transcribe',

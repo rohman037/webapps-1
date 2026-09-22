@@ -29,6 +29,7 @@ import { accessControlRouter } from './server/workflows/access-control/routes';
 import { apiKeysRouter } from './server/workflows/api-keys/routes';
 import { knowledgeRouter } from './server/workflows/knowledge/routes';
 import { eventsRouter } from './server/workflows/events/routes';
+import { videoToPromptRouter } from './server/workflows/video-to-prompt/routes';
 
 async function startServer() {
   const app = express();
@@ -126,6 +127,8 @@ async function startServer() {
         url.includes('/api/generate-photo-prompt') ||
         url.includes('/api/generate-prompt') ||
         url.includes('/api/generate-tiktok-shop-ideas') ||
+        url.includes('/api/generate-video-to-prompt') ||
+        url.includes('/api/video-to-prompt') ||
         url.includes('/api/gemini/generate') ||
         url.includes('/api/orchestrate') ||
         url.includes('/api/learn-feedback') ||
@@ -177,6 +180,7 @@ async function startServer() {
   app.use(tiktokRouter);
   app.use(knowledgeRouter);
   app.use(eventsRouter);
+  app.use(videoToPromptRouter);
   app.use(accessControlRouter);
   app.use(paymentRouter);
   app.use(apiKeysRouter);
