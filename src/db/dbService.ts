@@ -1,13 +1,9 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection as firestoreCollection } from 'firebase/firestore';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import firebaseConfig from '../../config/firebase-applet-config.json';
 import { FIRESTORE_COLLECTIONS } from './schema';
-
-const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+import { adminDb } from '../lib/firebase-admin';
 
 // Non-blocking debounced disk cache backup for high resilience & instant fallback
 const CACHE_DIR = path.join(process.cwd(), 'storage');
@@ -111,8 +107,7 @@ const recordDbError = (colName: string, op: string, error: any) => {
 
 const safeGet = async (colName: string): Promise<any[]> => {
   try {
-    const colRef = firestoreCollection(db, colName);
-    const snap = await withTimeout(getDocs(colRef), 4000);
+    const snap = await withTimeout(adminDb.collection(colName).get(), 4000);
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     
     // Update local cache
@@ -137,9 +132,8 @@ const safeGet = async (colName: string): Promise<any[]> => {
 
 const safeGetOne = async (colName: string, docId: string): Promise<any | null> => {
   try {
-    const docRef = doc(db, colName, docId);
-    const snap = await withTimeout(getDoc(docRef), 4000);
-    if (snap.exists()) {
+    const snap = await withTimeout(adminDb.collection(colName).doc(docId).get(), 4000);
+    if (snap.exists) {
       const data = { id: snap.id, ...snap.data() };
       if (!localStore[colName]) localStore[colName] = {};
       localStore[colName][docId] = data;
@@ -163,8 +157,7 @@ const safeSave = async (colName: string, item: any): Promise<any> => {
     persistLocalStore();
 
     // Persist to Firestore with timeout
-    const docRef = doc(db, colName, String(item.id));
-    await withTimeout(setDoc(docRef, item, { merge: true }), 4000);
+    await withTimeout(adminDb.collection(colName).doc(String(item.id)).set(item, { merge: true }), 4000);
     return item;
   } catch (e: any) {
     recordDbError(colName, `SAVE/${item?.id}`, e);
@@ -178,8 +171,7 @@ const safeDelete = async (colName: string, id: string): Promise<void> => {
       delete localStore[colName][id];
       persistLocalStore();
     }
-    const docRef = doc(db, colName, String(id));
-    await withTimeout(deleteDoc(docRef), 4000);
+    await withTimeout(adminDb.collection(colName).doc(String(id)).delete(), 4000);
   } catch (e: any) {
     recordDbError(colName, `DELETE/${id}`, e);
   }
@@ -188,9 +180,8 @@ const safeDelete = async (colName: string, id: string): Promise<void> => {
 export const testFirestoreHealth = async () => {
   const startTime = Date.now();
   try {
-    // Read probe on _healthCheck or packages (which is public-readable in firestore.rules)
-    const probeDoc = doc(db, '_healthCheck', 'connection');
-    await withTimeout(getDoc(probeDoc), 3500);
+    // Read probe on _healthCheck
+    await withTimeout(adminDb.collection('_healthCheck').doc('connection').get(), 3500);
     const latencyMs = Date.now() - startTime;
     dbDiagnostics.status = 'CONNECTED';
     dbDiagnostics.lastCheckTime = new Date().toISOString();
@@ -389,12 +380,11 @@ export const initDbSeed = async () => {
 
   // 2. Attempt remote Firestore synchronization with non-blocking error handling
   try {
-    const pkgCol = firestoreCollection(db, pkgColName);
-    const pkgSnap = await withTimeout(getDocs(pkgCol), 3000);
+    const pkgSnap = await withTimeout(adminDb.collection(pkgColName).get(), 3000);
     if (pkgSnap.empty) {
       console.log('[DB Seed] Seeding initial subscription packages to Firestore...');
       for (const p of packagesData) {
-        await setDoc(doc(db, pkgColName, p.id), p);
+        await adminDb.collection(pkgColName).doc(p.id).set(p);
       }
       console.log('[DB Seed] Packages successfully seeded to Firestore.');
     }
@@ -404,12 +394,11 @@ export const initDbSeed = async () => {
   }
 
   try {
-    const clientCol = firestoreCollection(db, clientColName);
-    const clientSnap = await withTimeout(getDocs(clientCol), 3000);
+    const clientSnap = await withTimeout(adminDb.collection(clientColName).get(), 3000);
     if (clientSnap.empty) {
       console.log('[DB Seed] Seeding initial clients to Firestore...');
       for (const c of defaultClients) {
-        await setDoc(doc(db, clientColName, c.id), c);
+        await adminDb.collection(clientColName).doc(c.id).set(c);
       }
       console.log('[DB Seed] Clients successfully seeded to Firestore.');
     }
@@ -533,8 +522,7 @@ export const dbDeleteAiAgent = async (id: string) => safeDelete(FIRESTORE_COLLEC
 export const dbGetApiKeys = async (): Promise<any[]> => {
   try {
     const colName = FIRESTORE_COLLECTIONS.API_KEYS || 'apiKeys';
-    const colRef = firestoreCollection(db, colName);
-    const snap = await getDocs(colRef);
+    const snap = await adminDb.collection(colName).get();
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
     if (items.length > 0) {
@@ -577,10 +565,9 @@ export const dbSaveApiKeys = async (item: any) => {
         
         // Persist each to Firestore asynchronously
         try {
-          const docRef = doc(db, colName, id);
-          await setDoc(docRef, cleanItem, { merge: true });
+          await adminDb.collection(colName).doc(id).set(cleanItem, { merge: true });
         } catch (err: any) {
-          console.warn(`[dbService] Firestore setDoc error for key ${id}:`, err?.message || err);
+          console.warn(`[dbService] Firestore set error for key ${id}:`, err?.message || err);
         }
       }
     }
@@ -592,10 +579,9 @@ export const dbSaveApiKeys = async (item: any) => {
     localStore[colName][id] = cleanItem;
     persistLocalStore(true);
     try {
-      const docRef = doc(db, colName, id);
-      await setDoc(docRef, cleanItem, { merge: true });
+      await adminDb.collection(colName).doc(id).set(cleanItem, { merge: true });
     } catch (err: any) {
-      console.warn(`[dbService] Firestore setDoc error for single key ${id}:`, err?.message || err);
+      console.warn(`[dbService] Firestore set error for single key ${id}:`, err?.message || err);
     }
   }
 };
@@ -607,8 +593,7 @@ export const dbDeleteApiKey = async (id: string) => {
     persistLocalStore(true);
   }
   try {
-    const docRef = doc(db, colName, String(id));
-    await deleteDoc(docRef);
+    await adminDb.collection(colName).doc(String(id)).delete();
   } catch (e: any) {
     console.warn(`[dbService] Deleting apiKey '${id}' from Firestore notice:`, e?.message || e);
   }

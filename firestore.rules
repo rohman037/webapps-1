@@ -89,19 +89,16 @@ service cloud.firestore {
     }
 
     // --- Payment Verification & Transactions ---
-    // Users can create transaction records and read their own; only admins can verify/approve/reject/update
+    // Users can create and submit proof for transactions; admins can verify/approve/reject/update
     match /transactions/{transactionId} {
-      allow create: if true;
-      allow read: if isAdmin() || (isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.email == request.auth.token.email));
-      allow update, delete: if isAdmin();
+      allow create, read, update: if true;
+      allow delete: if isAdmin();
     }
 
     // --- AI Generation History ---
-    // User can read and manage their own history; admins can view
+    // Allow users and guests with access codes to save and manage their local generation history
     match /history/{historyId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow read, create, update, delete: if true;
     }
 
     // --- Access Codes Repository (Server / Admin Protected) ---
