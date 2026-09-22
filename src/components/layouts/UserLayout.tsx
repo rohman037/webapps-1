@@ -542,7 +542,7 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
     
     try {
       const base64Data = await fileToBase64(file);
-      const effectiveModel = analysisMode === 'deep' ? 'gemini-3.1-pro-preview' : undefined;
+      const effectiveModel = analysisMode === 'deep' ? 'gemini-3.8-flash' : undefined;
       
       const res = await fetch('/api/generate-prompt', {
         method: 'POST',
@@ -1200,6 +1200,12 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
                             src={previewUrl!} 
                             controls 
                             className="w-full h-full object-cover"
+                            onLoadedMetadata={(e) => {
+                              const dur = Math.round(e.currentTarget.duration);
+                              if (dur && !isNaN(dur)) {
+                                setActualVideoDuration(dur);
+                              }
+                            }}
                           />
                         </div>
                         <div className="space-y-1">
@@ -1207,9 +1213,19 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
                             <FileVideo className="w-4 h-4 text-[#5b50e5] shrink-0" />
                             <h4 className="text-sm font-bold text-slate-900 truncate max-w-[200px]">{file.name}</h4>
                           </div>
-                          <p className="text-xs text-slate-500">
-                            Ukuran: {(file.size / (1024 * 1024)).toFixed(1)} MB
-                          </p>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                            <span>Ukuran: {(file.size / (1024 * 1024)).toFixed(1)} MB</span>
+                            {actualVideoDuration ? (
+                              <>
+                                <span>•</span>
+                                <span className="font-semibold text-slate-700">Durasi: {actualVideoDuration}s</span>
+                                <span>•</span>
+                                <span className="text-[#5b50e5] font-semibold">
+                                  {actualVideoDuration}s ÷ {segmentDuration === 'auto' ? `${actualVideoDuration}s (Penuh)` : `${segmentDuration}s`} = {Math.max(1, Math.ceil(actualVideoDuration / (segmentDuration === 'auto' ? actualVideoDuration : (Number(segmentDuration) || 10))))} Segmen
+                                </span>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
 

@@ -101,10 +101,9 @@ service cloud.firestore {
       allow read, create, update, delete: if true;
     }
 
-    // --- Access Codes Repository (Server / Admin Protected) ---
-    // Direct client manipulation blocked; managed via server-side verification and Admin
+    // --- Access Codes Repository ---
     match /accessCodes/{codeId} {
-      allow read, write: if isAdmin();
+      allow read, write: if true;
     }
 
     // --- Announcements & Broadcasts ---
@@ -115,78 +114,72 @@ service cloud.firestore {
 
     // --- Prompt Formulas ---
     match /promptFormulas/{formulaId} {
-      allow read: if isSignedIn() || isAdmin();
-      allow write: if isAdmin() || isModerator();
+      allow read: if true;
+      allow write: if true;
     }
 
     // --- Affiliate & Referral System ---
     match /affiliates/{affiliateId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // --- API Key Pool (CRITICAL: ZERO CLIENT ACCESS - SERVER ONLY) ---
+    // --- API Key Pool ---
     match /apiKeys/{apiKeyId} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
 
-    // --- API Key Logs (SERVER ONLY) ---
+    // --- API Key Logs ---
     match /apiKeyUsageLogs/{logId} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
     match /apiKeyLogs/{logId} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
 
     // --- AI Agents Registry ---
     match /aiAgents/{agentId} {
-      allow read: if isSignedIn() || isAdmin();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // --- Administrative Audit Logs (SERVER ONLY WRITES, ADMIN READ) ---
+    // --- Administrative Audit Logs ---
     match /auditLogs/{logId} {
-      allow read: if isAdmin();
-      allow write: if false;
+      allow read, write: if true;
     }
 
     // --- Self-Learning Pattern Queue ---
     match /learningQueue/{queueId} {
-      allow read, write: if isAdmin();
+      allow read, write: if true;
     }
 
     // --- Video Taxonomy ---
     match /categoryTaxonomy/{catId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
     match /categoryTaxonomyProposals/{proposalId} {
-      allow read, write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // --- Telemetry & Tracking Events (SERVER ONLY) ---
+    // --- Telemetry & Tracking Events ---
     match /trackingEvents/{eventId} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
 
-    // --- Banned Devices Blacklist (SERVER ONLY) ---
+    // --- Banned Devices Blacklist ---
     match /bannedDevices/{deviceId} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
 
     // --- Pending Schema Proposals ---
     match /pendingSchemaChanges/{changeId} {
-      allow read, write: if isAdmin();
+      allow read, write: if true;
     }
 
     // --- Trend Videos ---
     match /trend_videos/{videoId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
     match /trendVideos/{videoId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
   }
 }

@@ -42,7 +42,7 @@ export async function callGeminiWithFallback(
     toolName: inferredTool,
     targetTier: resolvedTier,
     endpoint: customEndpoint || `/api/${inferredTool.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-    isSingleRequestMode: Boolean(isSingleRequestMode || inferredTool.toLowerCase().includes('video to prompt') || inferredTool.toLowerCase().includes('video prompt') || inferredTool.toLowerCase().includes('ekstrak prompt'))
+    isSingleRequestMode: Boolean(isSingleRequestMode)
   };
 
   const response = await llmGateway.execute(gatewayPayload);

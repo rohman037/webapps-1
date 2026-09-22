@@ -13,6 +13,7 @@ import {
   GATEWAY_PHOTO_PROMPT_MODELS_HIERARCHY,
   GATEWAY_TTS_MODELS_HIERARCHY,
   GATEWAY_AUDIO_TRANSCRIBE_MODELS_HIERARCHY,
+  GATEWAY_VIDEO_MODELS_HIERARCHY,
   TOP_MODEL_ORDER,
   IMAGE_MODEL_ORDER,
   PHOTO_PROMPT_MODEL_ORDER,
@@ -613,12 +614,13 @@ export class LLMGateway {
     // Build intelligent cascading model list across ALL available models
     const toolLower = inferredTool.toLowerCase();
     const isVideoPromptTool = toolLower.includes('video to prompt') || toolLower.includes('video prompt') || toolLower.includes('ekstrak prompt');
-    const isSingleRequestMode = Boolean(options.isSingleRequestMode || isVideoPromptTool);
+    const isSingleRequestMode = Boolean(options.isSingleRequestMode);
 
     const isImageGenTool = (toolLower.includes('image generation') || toolLower.includes('generate image') || endpoint.includes('generate-image') || toolLower.includes('nano banana image')) && !toolLower.includes('prompt');
     const isPhotoPromptTool = toolLower.includes('photo prompt') || endpoint.includes('generate-photo-prompt') || toolLower.includes('prompt foto');
     const isAudioTranscribeTool = toolLower.includes('transcribe') || endpoint.includes('transcribe');
     const isTtsTool = (toolLower.includes('tts') || toolLower.includes('voice') || toolLower.includes('speech')) && !isAudioTranscribeTool;
+    const isVideoTool = isVideoPromptTool || toolLower.includes('video') || endpoint.includes('video');
 
     const defaultHierarchy = isImageGenTool 
       ? GATEWAY_IMAGE_MODELS_HIERARCHY 
@@ -628,7 +630,9 @@ export class LLMGateway {
           ? GATEWAY_AUDIO_TRANSCRIBE_MODELS_HIERARCHY
           : isTtsTool 
             ? GATEWAY_TTS_MODELS_HIERARCHY 
-            : GATEWAY_MODELS_HIERARCHY;
+            : isVideoTool
+              ? GATEWAY_VIDEO_MODELS_HIERARCHY
+              : GATEWAY_MODELS_HIERARCHY;
 
     // Fetch dynamic admin configured priorities if available
     let dynamicAdminOrder: string[] = [];
@@ -639,7 +643,7 @@ export class LLMGateway {
           dynamicAdminOrder = storedPriorities.image;
         } else if (isPhotoPromptTool && Array.isArray(storedPriorities.text) && storedPriorities.text.length > 0) {
           dynamicAdminOrder = storedPriorities.text;
-        } else if (inferredTool.toLowerCase().includes('video') && Array.isArray(storedPriorities.video) && storedPriorities.video.length > 0) {
+        } else if (isVideoTool && Array.isArray(storedPriorities.video) && storedPriorities.video.length > 0) {
           dynamicAdminOrder = storedPriorities.video;
         } else if (Array.isArray(storedPriorities.text) && storedPriorities.text.length > 0) {
           dynamicAdminOrder = storedPriorities.text;
@@ -654,8 +658,8 @@ export class LLMGateway {
     // If a model is specified (user explicit or tool preferred), place it first in the hierarchy; otherwise cascade from top priority
     let candidateModels: string[];
     if (isSingleRequestMode) {
-      // In single-request mode for Video to Prompt: STRICTLY 1 model, NO cascade
-      const chosenModel = options.model ? normalizeGeminiModel(options.model) : (baseOrderedHierarchy[0] || 'gemini-3.1-pro-preview');
+      // In single-request mode: STRICTLY 1 model, NO cascade
+      const chosenModel = options.model ? normalizeGeminiModel(options.model) : (baseOrderedHierarchy[0] || 'gemini-3.8-flash');
       candidateModels = [chosenModel];
       logger.info(`[Video to Prompt Single Mode] Locked to single model: ${chosenModel} (no cascade, no retry)`);
     } else if (options.model && (options.isUserExplicitChoice || options.model !== TOP_MODEL_ORDER[0])) {
@@ -680,8 +684,8 @@ export class LLMGateway {
     let lastError: any = null;
     let totalRetries = 0;
 
-    // Generous Request-Level Budgeting (90s) to allow traversing candidate keys
-    const MAX_TOTAL_EXECUTION_TIME_MS = 90000;
+    // Generous Request-Level Budgeting (120s) to allow traversing candidate keys
+    const MAX_TOTAL_EXECUTION_TIME_MS = 120000;
     // For single-request mode: exactly 1 key evaluation, no key hopping!
     const MAX_KEY_HOPS_PER_REQUEST = isSingleRequestMode ? 1 : Math.min(6, keyCandidates.length);
     const evaluatedKeyCandidates = keyCandidates.slice(0, MAX_KEY_HOPS_PER_REQUEST);
@@ -767,9 +771,12 @@ export class LLMGateway {
         const requestConfig = { ...(options.config || {}) };
 
         if (isThinkingModel) {
-          requestConfig.thinkingConfig = {
-            thinkingLevel: 'HIGH',
-          };
+          // Keep thinking level moderate so video analysis doesn't stall for >50s
+          if (!requestConfig.thinkingConfig) {
+            requestConfig.thinkingConfig = {
+              thinkingLevel: 'LOW',
+            };
+          }
           delete requestConfig.maxOutputTokens;
         }
 
@@ -790,10 +797,10 @@ export class LLMGateway {
           const contentsStr = typeof options.contents === 'string' ? options.contents : JSON.stringify(options.contents || {});
           const hasMediaPayload = contentsStr.includes('inlineData') || contentsStr.length > 50000;
           const perAttemptTimeoutMs = isThinkingModel 
-            ? (hasMediaPayload ? 50000 : 35000) 
+            ? (hasMediaPayload ? 80000 : 45000) 
             : isImageModel 
-            ? 30000 
-            : (hasMediaPayload ? 45000 : 35000);
+            ? 35000 
+            : (hasMediaPayload ? 75000 : 35000);
 
           try {
             logger.info(

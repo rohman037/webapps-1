@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS } from '@/server/core/state/serverState';
 import { logger } from '@/server/core/utils/logger';
+import { runVideoToPromptPipeline } from '@/server/workflows/video-to-prompt/service';
 
 export const VIDEO_PROMPT_SYSTEM_INSTRUCTION = `Analyze the supplied video once as a professional video reverse-engineering system.
 You MUST output ONLY valid JSON matching the specified schema.
@@ -353,18 +354,63 @@ export async function generateVideoPromptService(options: GeneratePromptOptions)
     }
   }
 
-  // 2. Select preferred model based on analysisMode (Deep vs Fast)
+  // 2. Select optimal high-performance model
   let userSelectedModel = model;
-  if (
-    !userSelectedModel ||
-    userSelectedModel === 'gemini-3.6-flash' ||
-    userSelectedModel === 'gemini-3.8-flash' ||
-    userSelectedModel === 'gemini-3.1-pro-preview'
-  ) {
-    userSelectedModel = analysisMode === 'deep' ? 'gemini-3.1-pro-preview' : 'gemini-3.8-flash';
+  if (!userSelectedModel || userSelectedModel === 'gemini-3.1-pro-preview') {
+    userSelectedModel = 'gemini-3.8-flash';
   }
 
-  // 3. Build Single Multimodal Gemini Request
+  // 3. Execute Unified Video to Prompt Pipeline
+  const pipelineResult = await runVideoToPromptPipeline({
+    videoFile: base64Data,
+    mimeType,
+    videoUrl: sourceUrl,
+    sourceTitle: sourceCaption,
+    videoDuration: actualDuration,
+    segmentDuration: segmentDuration === 'auto' ? 'full' : (Number(segmentDuration) || 10),
+    targetAi: targetAI,
+    aspectRatio: '9:16',
+    analysisDepth: analysisMode,
+    model: userSelectedModel,
+    customApiKey,
+    clientAccessCode,
+    useCache,
+  });
+
+  const output = {
+    prompt: pipelineResult.markdown,
+    markdown: pipelineResult.markdown,
+    structuredAnalysis: pipelineResult.segments,
+    modelUsed: pipelineResult.meta.modelUsed,
+    tierUsed: pipelineResult.meta.tierUsed,
+    cached: false,
+    requestCount: pipelineResult.meta.apiCallsUsed,
+    caption: pipelineResult.caption,
+    hashtags: pipelineResult.hashtags,
+    split_duration: pipelineResult.split_duration,
+    metadata: pipelineResult.metadata,
+    clips: pipelineResult.clips,
+    segments: pipelineResult.segments,
+    masterPrompt: pipelineResult.masterPrompt,
+    negativePrompt: pipelineResult.negativePrompt,
+    validation: pipelineResult.validation,
+  };
+
+  // 4. Save to Cache with exact matching cacheKey
+  if (useCache) {
+    promptResponseCache.set(cacheKey, {
+      timestamp: Date.now(),
+      text: pipelineResult.markdown,
+      modelUsed: pipelineResult.meta.modelUsed,
+      structuredAnalysis: pipelineResult.segments,
+    } as any);
+    logger.info(`[Video Prompt Cache Saved] key=${cacheKey}`);
+  }
+
+  return output;
+}
+
+export async function oldGenerateVideoPromptService_Deprecated(options: GeneratePromptOptions) {
   const targetAiInstruction = `Target AI Generator: ${targetAI.toUpperCase()}. Format each shot's generationPrompt so it is directly usable in ${targetAI}.`;
   const actionsInstruction = includeActions
     ? 'Detail the specific sequential physical movements and camera actions in each shot.'

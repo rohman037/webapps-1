@@ -10,7 +10,15 @@ import {
   Camera,
   Download,
   Sparkles,
-  ListFilter,
+  Clapperboard,
+  Video,
+  Volume2,
+  Sliders,
+  ShieldAlert,
+  BarChart3,
+  Layers,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { learningSync } from '../../../lib/learningSync';
 import BatchPhotoPromptModal from '../../modals/BatchPhotoPromptModal';
@@ -33,6 +41,16 @@ export interface SplitPromptViewerProps {
   ) => void;
 }
 
+export interface MicroClipItem {
+  id?: number;
+  timeRange: string;
+  visual: string;
+  aksi: string;
+  suara?: string | null;
+  subteks?: string | null;
+  masterPrompt?: string;
+}
+
 export interface ClipSegment {
   id: number;
   title: string;
@@ -52,6 +70,8 @@ export interface ClipSegment {
   estVoiceDurationSec?: number;
   masterPrompt: string;
   content: string;
+  stageLabel?: string;
+  microClips?: MicroClipItem[];
 }
 
 export interface SeoCaptionInfo {
@@ -61,6 +81,13 @@ export interface SeoCaptionInfo {
   tagsList: string[];
   charCount: number;
   wordCount: number;
+}
+
+export interface VideoAnalysisData {
+  visualAndStyle?: string;
+  audioAndMusic?: string;
+  cameraAndFraming?: string;
+  lightingAndMood?: string;
 }
 
 export function extractStructuredData(rawText: string): any | null {
@@ -79,13 +106,96 @@ export function extractStructuredData(rawText: string): any | null {
   return null;
 }
 
+export function extractVideoAnalysis(rawText: string): VideoAnalysisData | null {
+  if (!rawText) return null;
+  const structured = extractStructuredData(rawText);
+  if (structured?.videoAnalysis) {
+    return structured.videoAnalysis;
+  }
+
+  const match = rawText.match(/##\s*🎬?\s*ANALISIS VIDEO[^\n]*\n([\s\S]*?)(?=##|$)/i);
+  if (!match) return null;
+
+  const text = match[1];
+  const vis = text.match(/(?:Visual\s*&\s*Gaya|Visual|Gaya)[:\s]*([^\n]+)/i);
+  const aud = text.match(/(?:Audio\s*&\s*Musik|Audio|Musik)[:\s]*([^\n]+)/i);
+  const kam = text.match(/(?:Kamera\s*&\s*Lensa|Kamera|Lensa)[:\s]*([^\n]+)/i);
+  const lig = text.match(/(?:Lighting\s*&\s*Mood|Lighting|Mood)[:\s]*([^\n]+)/i);
+
+  if (!vis && !aud && !kam && !lig) return null;
+
+  return {
+    visualAndStyle: vis ? vis[1].replace(/^\*+|\*+$/g, '').trim() : '',
+    audioAndMusic: aud ? aud[1].replace(/^\*+|\*+$/g, '').trim() : '',
+    cameraAndFraming: kam ? kam[1].replace(/^\*+|\*+$/g, '').trim() : '',
+    lightingAndMood: lig ? lig[1].replace(/^\*+|\*+$/g, '').trim() : '',
+  };
+}
+
+export function extractMasterPromptText(rawText: string): string | null {
+  if (!rawText) return null;
+  const structured = extractStructuredData(rawText);
+  if (structured?.masterPrompt) {
+    return structured.masterPrompt.trim();
+  }
+
+  const match = rawText.match(/##\s*🎯?\s*MASTER PROMPT[^\n]*\n([\s\S]*?)(?=##|$)/i);
+  if (match) {
+    return match[1].replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  }
+  return null;
+}
+
+export function extractNegativePromptText(rawText: string): string | null {
+  if (!rawText) return null;
+  const structured = extractStructuredData(rawText);
+  if (structured?.negativePrompt) {
+    return structured.negativePrompt.trim();
+  }
+
+  const match = rawText.match(/##\s*🚫?\s*NEGATIVE PROMPT[^\n]*\n([\s\S]*?)(?=##|$)/i);
+  if (match) {
+    return match[1].replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  }
+  return null;
+}
+
+export function extractTechnicalSummaryData(rawText: string): Record<string, string> | null {
+  if (!rawText) return null;
+  const structured = extractStructuredData(rawText);
+  if (structured?.technicalSummary && Object.keys(structured.technicalSummary).length > 0) {
+    return structured.technicalSummary;
+  }
+
+  const match = rawText.match(/##\s*📊?\s*RINGKASAN TEKNIS[^\n]*\n([\s\S]*?)(?=##|$)/i);
+  if (!match) return null;
+
+  const result: Record<string, string> = {};
+  const lines = match[1].split('\n');
+  for (const line of lines) {
+    const clean = line.replace(/^[\s\-*]+/, '').trim();
+    const parts = clean.split(':');
+    if (parts.length >= 2) {
+      const k = parts[0].trim();
+      const v = parts.slice(1).join(':').trim();
+      if (k && v) result[k] = v;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
 export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | null {
   if (!rawText) return null;
 
   const structured = extractStructuredData(rawText);
   if (structured && (structured.caption || structured.hashtags)) {
     const cap = (structured.caption || '').trim();
-    const hash = (structured.hashtags || '').trim();
+    let hash = '';
+    if (Array.isArray(structured.hashtags)) {
+      hash = structured.hashtags.join(' ');
+    } else if (typeof structured.hashtags === 'string') {
+      hash = structured.hashtags.trim();
+    }
     const tagMatches = hash.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g) || [];
     const tagsList = tagMatches.slice(0, 5);
     const combined = `${cap}\n\n${tagsList.join(' ')}`.trim();
@@ -100,16 +210,18 @@ export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | nu
   }
 
   // Check for caption & hashtag section
-  const sectionMatch = rawText.match(/(?:###|\*\*)\s*(?:📱|🔥|✨)?\s*CAPTION\s*(?:&|DAN)?\s*HASHTAG[\s\S]*$/i);
+  const sectionMatch = rawText.match(/(?:###|\*\*|##)\s*(?:📱|🔥|✨|📋)?\s*CAPTION[\s\S]*$/i);
   const targetText = sectionMatch ? sectionMatch[0] : rawText;
 
   // Match Caption
   const captionMatch =
+    targetText.match(/##\s*📋?\s*CAPTION[^\n]*\n([\s\S]*?)(?=\n*##|\n*###|\n*\*\*Hashtags?|$)/i) ||
     targetText.match(/\*\*Caption[^\n]*\*\*[:\s]*\n*([\s\S]*?)(?=\n*\*\*(?:Hashtags?|Tag|Hashtag Viral)|$)/i) ||
     targetText.match(/(?:Caption SEO|Caption FYP|Caption)[:\s]*\n*([\s\S]*?)(?=\n*(?:#|Hashtag|\*\*Hashtag)|$)/i);
 
   // Match Hashtags
   const hashtagsMatch =
+    targetText.match(/##\s*#?\s*HASHTAG[^\n]*\n([\s\S]*?)(?=\n*##|\n*###|$)/i) ||
     targetText.match(/\*\*Hashtags?[^\n]*\*\*[:\s]*\n*([\s\S]*?)(?=\n*---|\n*###|$)/i) ||
     targetText.match(/(?:Hashtags?|Hashtag Viral|Tags?)[:\s]*\n*([\s\S]*?)(?=\n*---|\n*###|$)/i) ||
     targetText.match(/((?:#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+\s*){2,})/i);
@@ -128,39 +240,13 @@ export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | nu
     caption = caption.slice(0, hashIdx).trim();
   }
 
-  // Clean spam phrasing from caption
-  if (caption) {
-    caption = caption
-      .replace(/\b(racun\s*tik\s*tok|racun\s*tiktok)\b/gi, 'rekomendasi produk pilihan')
-      .replace(/\b(for\s*your\s*page|f\s*y\s*p|fyp)\b/gi, 'pencarian sosial media')
-      .replace(/\b(viral\s*di\s*tiktok|viral\s*tiktok)\b/gi, 'banyak dicari');
-  }
-
   let tagsList: string[] = [];
-
-  // Ensure maximum 5 hashtags strictly & filter generic spam tags
   if (hashtags) {
     const tagList = hashtags.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g);
     if (tagList) {
-      const BANNED_SPAM = new Set([
-        'fyp',
-        'fypシ',
-        'fypviral',
-        'foryou',
-        'foryoupage',
-        'racuntiktok',
-        'racuntiktokshop',
-        'viral',
-        'viralvideo',
-        'trending',
-        'beranda',
-        'fyppage',
-        'foryourpage',
-      ]);
-      const filtered = tagList.filter((t) => !BANNED_SPAM.has(t.replace('#', '').toLowerCase()));
-      const finalTags = (filtered.length > 0 ? filtered : tagList).slice(0, 5);
-      tagsList = finalTags;
-      hashtags = finalTags.join(' ');
+      const filtered = tagList.slice(0, 5);
+      tagsList = filtered;
+      hashtags = filtered.join(' ');
     }
   }
 
@@ -170,6 +256,7 @@ export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | nu
     return {
       caption,
       hashtags,
+      cleanCaptionWithoutTags: caption,
       tagsList,
       charCount,
       wordCount,
@@ -179,188 +266,214 @@ export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | nu
   return null;
 }
 
-function extractSegmentDetails(body: string, id: number, totalClips: number) {
-  // Visual match
-  const visualMatch = body.match(
-    /(?:\*\*|\*|__)?Visual(?:\*\*|\*|__)?\s*:\s*([\s\S]*?)(?=\n\s*(?:\*\*|\*|__)?(?:Aksi|Voice\s*Over|Voiceover|VO|Subteks|Teks\s*Layar|Prompt)(?:\*\*|\*|__)?\s*:|$)/i
-  );
-
-  // Aksi match
-  const aksiMatch = body.match(
-    /(?:\*\*|\*|__)?Aksi(?:\s*Kamera)?(?:\*\*|\*|__)?\s*:\s*([\s\S]*?)(?=\n\s*(?:\*\*|\*|__)?(?:Visual|Voice\s*Over|Voiceover|VO|Subteks|Teks\s*Layar)(?:\*\*|\*|__)?\s*:|$)/i
-  );
-
-  // Voice Over match
-  const voMatch = body.match(
-    /(?:\*\*|\*|__)?(?:Voice\s*Over|Voiceover|VO|Dialog|Narasi)(?:\*\*|\*|__)?\s*:\s*([\s\S]*?)(?=\n\s*(?:\*\*|\*|__)?(?:Visual|Aksi|Subteks|Teks\s*Layar)(?:\*\*|\*|__)?\s*:|$)/i
-  );
-
-  // Subteks match
-  const subMatch = body.match(
-    /(?:\*\*|\*|__)?(?:Subteks|Teks\s*Layar|Text\s*Overlay|Overlay)(?:\*\*|\*|__)?\s*:\s*([\s\S]*?)(?=\n\s*(?:\*\*|\*|__)?(?:Visual|Aksi|Voice\s*Over|Voiceover|VO)(?:\*\*|\*|__)?\s*:|$)/i
-  );
-
-  let visual = visualMatch ? visualMatch[1].trim() : '';
-  let aksi = aksiMatch ? aksiMatch[1].trim() : '';
-  let voiceOver = voMatch ? voMatch[1].trim() : '';
-  let subteks = subMatch ? subMatch[1].trim() : '';
-
-  // Clean markdown delimiters
-  visual = visual.replace(/^>+\s*/gm, '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-  aksi = aksi.replace(/^>+\s*/gm, '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-  voiceOver = voiceOver.replace(/^>+\s*/gm, '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-  subteks = subteks.replace(/^>+\s*/gm, '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-
-  // Fallback: If neither visual nor aksi found, treat plain text body as visual
-  if (!visual && !aksi && !voiceOver && !subteks) {
-    visual = body.replace(/```[a-z]*\n?/gi, '').replace(/\n?```/gi, '').trim();
-  }
-
-  // Optical & Technical metadata extraction
-  const combinedText = `${visual} ${aksi}`;
-
-  // Lens & Framing
-  const lensMatch = visual.match(/\b\d{1,3}mm(?:\s+anamorphic)?\b/i);
-  const shotMatch = visual.match(
-    /\b(macro(?:\s+shot)?|extreme\s+close-up|close-up|wide(?:\s+shot)?|medium(?:\s+shot)?|cutaway(?:\s+teknikal)?|hero(?:\s+shot)?|establishing\s+shot|overhead|low-angle|high-angle|dutch\s+angle)\b/i
-  );
-  let lensInfo = '';
-  if (shotMatch && lensMatch) {
-    lensInfo = `${shotMatch[0]} ${lensMatch[0]}`;
-  } else if (shotMatch) {
-    lensInfo = shotMatch[0];
-  } else if (lensMatch) {
-    lensInfo = `Lensa ${lensMatch[0]}`;
-  }
-
-  // Camera Motion
-  const motionMatch = combinedText.match(
-    /\b(push-in(?:\s+cepat|\s+lambat|\s+halus)?|pull-out|dolly-in|dolly-out|tilt-down|tilt-up|orbit(?:\s+\d+\s*(?:derajat|°))?|slow\s+pan|pan(?:\s+kiri|\s+kanan|\s+halus)?|handheld(?:\s+dinamis)?|tracking(?:\s+shot)?|crane(?:\s+shot)?|zoom-in|zoom-out|static(?:\s+shot)?)\b/i
-  );
-  const cameraMotion = motionMatch ? motionMatch[0] : '';
-
-  // Lighting & Mood
-  const lightMatch = visual.match(
-    /\b(chiaroscuro(?:\s+bernuansa\s+[\w\-]+)?|studio\s+dramatis|teal-orange|golden\s+hour|softbox|neon(?:\s+rim)?|cinematic\s+moody|natural\s+daylight|high\s+contrast|rim\s+light(?:ing)?)\b/i
-  );
-  const lightingInfo = lightMatch ? lightMatch[0] : '';
-
-  let roleTag = 'Adegan Sinematik';
-  if (id === 1) {
-    roleTag = 'Hook Visual (0-3s)';
-  } else if (id === 2) {
-    roleTag = 'Eskalasi Masalah';
-  } else if (id === totalClips && totalClips > 2) {
-    roleTag = 'Call to Action';
-  } else {
-    roleTag = 'Solusi & Demo';
-  }
-
-  const wordCount = voiceOver ? voiceOver.split(/\s+/).filter(Boolean).length : 0;
-  const estVoiceDurationSec = Math.max(1, Math.round(wordCount / 2.5));
-
-  // Construct standard Master Prompt AI matching the screenshot:
-  // Visual: ... Aksi: ... voice over: ...
-  const promptParts: string[] = [];
-  if (visual) promptParts.push(`Visual: ${visual}`);
-  if (aksi) promptParts.push(`Aksi: ${aksi}`);
-  if (voiceOver) promptParts.push(`voice over: ${voiceOver}`);
-  if (subteks) promptParts.push(`Subteks: ${subteks}`);
-
-  const masterPrompt = promptParts.join(' ').trim() || body;
-
-  return {
-    visual,
-    aksi,
-    voiceOver,
-    subteks,
-    lensInfo,
-    cameraMotion,
-    lightingInfo,
-    roleTag,
-    wordCount,
-    estVoiceDurationSec,
-    masterPrompt,
-  };
-}
-
 export function parseClipSegments(rawText: string, defaultDurationSec = 10): ClipSegment[] {
   if (!rawText) return [];
 
-  // Check if structured data exists (100% reliable direct JSON parsing)
+  // Check structured data first
   const structured = extractStructuredData(rawText);
-  if (structured && Array.isArray(structured.shots) && structured.shots.length > 0) {
-    const totalClips = structured.shots.length;
-    return structured.shots.map((shot: any, index: number) => {
-      const id = index + 1;
-      const startSec = typeof shot.startSec === 'number' ? shot.startSec : index * defaultDurationSec;
-      const endSec = typeof shot.endSec === 'number' ? shot.endSec : (index + 1) * defaultDurationSec;
-      const durationSec = Math.max(1, Math.round(endSec - startSec));
-      const timestamp = `${startSec}–${endSec} detik`;
 
-      const visual = shot.scene || shot.subject || structured.global?.style || 'Visual adegan sinematik';
-      const actionsList = Array.isArray(shot.actions) ? shot.actions : (shot.actions ? [shot.actions] : []);
-      const aksi = actionsList.join('. ');
-      const voiceOver = shot.dialogue || shot.voiceOver || '';
-      const subteks = shot.onScreenText || '';
+  // 1. Support structured.clips from AI Agent pipeline
+  if (structured && Array.isArray(structured.clips) && structured.clips.length > 0) {
+    return structured.clips.map((clip: any, index: number) => {
+      const id = clip.clip_number || index + 1;
+      const timestamp = (clip.start_time !== undefined && clip.end_time !== undefined)
+        ? `${clip.start_time}-${clip.end_time} detik`
+        : `Klip ${id}`;
+      const stageLabel = clip.stageLabel || 'Sinematik';
 
-      const lensInfo = shot.cameraChange || structured.cinematography?.lens || structured.cinematography?.framing || 'Standar Lensa';
-      const cameraMotion = shot.cameraChange || structured.cinematography?.cameraMovement || 'Kamera Dinamis';
-      const lightingInfo = shot.lightingChange || structured.cinematography?.lighting || 'Pencahayaan Natural';
-
-      let roleTag = 'Adegan Sinematik';
-      if (id === 1) {
-        roleTag = 'Hook Visual (0-3s)';
-      } else if (id === 2) {
-        roleTag = 'Eskalasi Masalah';
-      } else if (id === totalClips && totalClips > 2) {
-        roleTag = 'Call to Action';
-      }
-
-      const voiceWords = voiceOver.trim() ? voiceOver.trim().split(/\s+/).filter(Boolean) : [];
-      const wordCount = voiceWords.length;
-      const estVoiceDurationSec = Math.max(1, Math.round((wordCount / 140) * 60));
-
-      const masterPrompt = shot.generationPrompt ||
-        `${structured.global?.style || 'Cinematic video'}, ${visual}, ${aksi}, ${lensInfo}, ${lightingInfo}, 8K photorealistic`;
-
-      const content = `${visual}\n${aksi}\n${voiceOver ? `voice over: ${voiceOver}` : (subteks ? `Subteks: ${subteks}` : '')}`.trim();
+      const microClips: MicroClipItem[] = Array.isArray(clip.scenes)
+        ? clip.scenes.map((sc: any, scIdx: number) => {
+            const timeTag = sc.start && sc.end ? `${sc.start} - ${sc.end}` : (sc.timeRange || '');
+            const vis = sc.visual || '';
+            const aks = sc.action || sc.aksi || '';
+            const cam = sc.camera ? `Camera: ${sc.camera}` : '';
+            const sua = sc.subtitle || sc.suara || null;
+            const sub = sc.subject ? `Subjek: ${sc.subject}` : (sc.subteks || null);
+            return {
+              id: scIdx + 1,
+              timeRange: timeTag,
+              visual: vis,
+              aksi: aks,
+              suara: sua,
+              subteks: sub,
+              masterPrompt: cam ? `${cam} | Visual: ${vis} | Aksi: ${aks}` : `${vis}. ${aks}`,
+            };
+          })
+        : [];
 
       return {
         id,
-        title: `Segmen Prompt Klip ${id}`,
+        title: `#${id} Segmen Prompt Klip ${id}`,
         timestamp,
-        startSec,
-        endSec,
-        durationSec,
-        content,
-        visual,
-        aksi,
-        voiceOver,
-        subteks,
-        lensInfo,
-        cameraMotion,
-        lightingInfo,
-        roleTag,
-        wordCount,
-        estVoiceDurationSec,
-        masterPrompt,
+        stageLabel,
+        roleTag: `Stage: ${stageLabel}`,
+        visual: clip.scenes?.[0]?.visual || `Adegan Klip ${id}`,
+        aksi: clip.scenes?.map((s: any) => s.action || s.aksi).filter(Boolean).join('. ') || '',
+        voiceOver: clip.scenes?.map((s: any) => s.subtitle || s.suara).filter(Boolean).join(' ') || '',
+        subteks: '',
+        masterPrompt: clip.master_prompt || '',
+        content: clip.master_prompt || '',
+        microClips,
       };
     });
   }
 
-  // Strip caption/hashtag section from the clips body
-  const clipsPart = rawText.split(/(?:###|\*\*)\s*(?:📱|🔥|✨)?\s*CAPTION\s*(?:&|DAN)?\s*HASHTAG/i)[0];
+  // 2. Support structured.segments
+  if (structured && Array.isArray(structured.segments) && structured.segments.length > 0) {
+    return structured.segments.map((seg: any, index: number) => {
+      const id = seg.segmentIndex || index + 1;
+      const timestamp = seg.timeRange || `Segmen ${id}`;
+      const stageLabel = seg.stageLabel || 'Sinematik';
 
-  const segments: ClipSegment[] = [];
+      const microClips: MicroClipItem[] = Array.isArray(seg.microClips)
+        ? seg.microClips.map((mc: any, mcIdx: number) => {
+            const timeTag = mc.timeRange || '';
+            const vis = mc.visual || '';
+            const aks = mc.aksi || '';
+            const sua = mc.suara || null;
+            const sub = mc.subteks || null;
+            const prompt = `${timeTag ? `[${timeTag}] ` : ''}Visual: ${vis}. Aksi: ${aks}.${sua ? ` Suara: "${sua}"` : ''}${sub ? ` Subteks: "${sub}"` : ''}`.trim();
+            return {
+              id: mcIdx + 1,
+              timeRange: timeTag,
+              visual: vis,
+              aksi: aks,
+              suara: sua,
+              subteks: sub,
+              masterPrompt: prompt,
+            };
+          })
+        : [];
 
-  // Pattern 1: "0–10 detik" / "0-10 detik" / "0 – 10 detik"
+      const firstClip = microClips[0];
+      const visual = firstClip?.visual || `Adegan segmen ${id}`;
+      const aksi = microClips.map((c) => c.aksi).filter(Boolean).join('. ');
+      const voiceOver = microClips.map((c) => c.suara).filter(Boolean).join(' ');
+      const subteks = microClips.map((c) => c.subteks).filter(Boolean).join(' ');
+
+      const promptBlocks = microClips.map((c) => {
+        const lines = [];
+        if (c.timeRange) lines.push(`[${c.timeRange}]`);
+        if (c.visual) lines.push(`Visual: ${c.visual}`);
+        if (c.aksi) lines.push(`Aksi: ${c.aksi}`);
+        if (c.suara) lines.push(`Suara: "${c.suara}"`);
+        if (c.subteks) lines.push(`Subteks: "${c.subteks}"`);
+        return lines.join('\n');
+      });
+
+      const masterPrompt = promptBlocks.join('\n\n') || `${visual}\n${aksi}`;
+
+      return {
+        id,
+        title: `Segmen ${id}`,
+        timestamp,
+        stageLabel,
+        roleTag: `Stage: ${stageLabel}`,
+        visual,
+        aksi,
+        voiceOver,
+        subteks,
+        masterPrompt,
+        content: masterPrompt,
+        microClips,
+      };
+    });
+  }
+
+  // Fallback: Check if markdown has ### 📹 SEGMEN blocks
+  const segmentHeaderRegex = /###\s*📹?\s*SEGMEN\s*(\d+)[\s—\-]*\[?([^\]\n]*)\]?/gi;
+  if (rawText.match(segmentHeaderRegex)) {
+    const blocks = rawText.split(/(?=\n###\s*📹?\s*SEGMEN|\n##\s*📹?\s*SEGMEN)/gi);
+    const parsedSegments: ClipSegment[] = [];
+
+    for (const block of blocks) {
+      const headerMatch = block.match(/(?:###|##)\s*📹?\s*SEGMEN\s*(\d+)[\s—\-]*\[?([^\]\n]*)\]?/i);
+      if (!headerMatch) continue;
+
+      const segIdx = parseInt(headerMatch[1], 10) || parsedSegments.length + 1;
+      let timeRange = (headerMatch[2] || '').trim();
+      const stageMatch = block.match(/\*\*Stage:\s*([^\*\n]+)\*\*/i);
+      const stageLabel = stageMatch ? stageMatch[1].trim() : 'Sinematik';
+
+      const codeBlockMatch = block.match(/```(?:text)?\n([\s\S]*?)```/);
+      const bodyContent = codeBlockMatch ? codeBlockMatch[1] : block;
+
+      const microClips: MicroClipItem[] = [];
+      const lines = bodyContent.split('\n');
+      let currentClip: Partial<MicroClipItem> = {};
+
+      for (const line of lines) {
+        const tMatch = line.match(/^\[?(\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s)?)\]?/i);
+        if (tMatch && !line.toLowerCase().includes('segmen')) {
+          if (currentClip.visual || currentClip.aksi) {
+            microClips.push({
+              id: microClips.length + 1,
+              timeRange: currentClip.timeRange || '',
+              visual: currentClip.visual || '',
+              aksi: currentClip.aksi || '',
+              suara: currentClip.suara || null,
+              subteks: currentClip.subteks || null,
+              masterPrompt: `${currentClip.timeRange ? `[${currentClip.timeRange}] ` : ''}Visual: ${currentClip.visual || ''}. Aksi: ${currentClip.aksi || ''}.${currentClip.suara ? ` Suara: "${currentClip.suara}"` : ''}${currentClip.subteks ? ` Subteks: "${currentClip.subteks}"` : ''}`.trim(),
+            });
+          }
+          currentClip = { timeRange: tMatch[1].trim() };
+        } else if (line.match(/Visual:/i)) {
+          currentClip.visual = line.replace(/Visual:\s*/i, '').trim();
+        } else if (line.match(/Aksi:/i)) {
+          currentClip.aksi = line.replace(/Aksi:\s*/i, '').trim();
+        } else if (line.match(/Suara:/i)) {
+          currentClip.suara = line.replace(/Suara:\s*"?/i, '').replace(/"?$/, '').trim();
+        } else if (line.match(/Subteks:/i)) {
+          currentClip.subteks = line.replace(/Subteks:\s*"?/i, '').replace(/"?$/, '').trim();
+        }
+      }
+
+      if (currentClip.visual || currentClip.aksi) {
+        microClips.push({
+          id: microClips.length + 1,
+          timeRange: currentClip.timeRange || '',
+          visual: currentClip.visual || '',
+          aksi: currentClip.aksi || '',
+          suara: currentClip.suara || null,
+          subteks: currentClip.subteks || null,
+          masterPrompt: `${currentClip.timeRange ? `[${currentClip.timeRange}] ` : ''}Visual: ${currentClip.visual || ''}. Aksi: ${currentClip.aksi || ''}.${currentClip.suara ? ` Suara: "${currentClip.suara}"` : ''}${currentClip.subteks ? ` Subteks: "${currentClip.subteks}"` : ''}`.trim(),
+        });
+      }
+
+      if (!timeRange && microClips.length > 0) {
+        timeRange = `${microClips[0].timeRange.split(/[–\-—]/)[0]}–${microClips[microClips.length - 1].timeRange.split(/[–\-—]/)[1] || ''}`;
+      }
+
+      const visual = microClips[0]?.visual || `Segmen ${segIdx}`;
+      const aksi = microClips.map((c) => c.aksi).filter(Boolean).join('. ');
+      const masterPrompt = bodyContent.trim();
+
+      parsedSegments.push({
+        id: segIdx,
+        title: `Segmen ${segIdx}`,
+        timestamp: timeRange || `Segmen ${segIdx}`,
+        stageLabel,
+        roleTag: `Stage: ${stageLabel}`,
+        visual,
+        aksi,
+        masterPrompt,
+        content: masterPrompt,
+        microClips,
+      });
+    }
+
+    if (parsedSegments.length > 0) {
+      return parsedSegments;
+    }
+  }
+
+  // Classic fallback: parse timeline matches
   const timelineRegex =
     /(?:^|\n)\s*(\d+(?:[.,]\d+)?)\s*[–\-—]\s*(\d+(?:[.,]\d+)?)\s*(?:detik|s|sec)?\s*\n([\s\S]*?)(?=(?:\n\s*\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s|sec)?)|$)/gi;
 
   const matches: Array<{ start: string; end: string; body: string }> = [];
   let m;
-  while ((m = timelineRegex.exec(clipsPart)) !== null) {
+  while ((m = timelineRegex.exec(rawText)) !== null) {
     matches.push({
       start: m[1].replace(',', '.'),
       end: m[2].replace(',', '.'),
@@ -368,73 +481,28 @@ export function parseClipSegments(rawText: string, defaultDurationSec = 10): Cli
     });
   }
 
-  // Pattern 2: "KLIP 1" / "Segmen 1"
-  if (matches.length === 0) {
-    const clipBlockRegex =
-      /(?:###|##|\*\*)\s*(?:🎬|🎥)?\s*(?:KLIP|Segmen|Scene)\s*(\d+)[^\n]*\n([\s\S]*?)(?=(?:\n\s*(?:###|##|\*\*)\s*(?:🎬|🎥)?\s*(?:KLIP|Segmen|Scene)\s*\d+)|$)/gi;
-    let cm;
-    let idx = 0;
-    while ((cm = clipBlockRegex.exec(clipsPart)) !== null) {
-      idx++;
-      const startS = (idx - 1) * defaultDurationSec;
-      const endS = idx * defaultDurationSec;
-      matches.push({
-        start: String(startS),
-        end: String(endS),
-        body: cm[2].trim(),
-      });
-    }
-  }
-
-  // Pattern 3: Fallback split by double horizontal rule or headers
-  if (matches.length === 0) {
-    const parts = clipsPart
-      .split(/\n\s*---\s*\n/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (parts.length > 1) {
-      parts.forEach((p, idx) => {
-        const startS = idx * defaultDurationSec;
-        const endS = (idx + 1) * defaultDurationSec;
-        matches.push({
-          start: String(startS),
-          end: String(endS),
-          body: p,
-        });
-      });
-    }
-  }
-
-  // Fallback to single clip
-  if (matches.length === 0 && clipsPart.trim()) {
-    matches.push({
-      start: '0',
-      end: String(defaultDurationSec),
-      body: clipsPart.trim(),
+  if (matches.length > 0) {
+    return matches.map((item, index) => {
+      const id = index + 1;
+      const startSec = parseFloat(item.start) || 0;
+      const endSec = parseFloat(item.end) || startSec + defaultDurationSec;
+      const timestamp = `${startSec}–${endSec} detik`;
+      return {
+        id,
+        title: `Segmen ${id}`,
+        timestamp,
+        startSec,
+        endSec,
+        durationSec: Math.max(1, endSec - startSec),
+        content: item.body,
+        visual: item.body,
+        aksi: '',
+        masterPrompt: item.body,
+      };
     });
   }
 
-  matches.forEach((item, index) => {
-    const id = index + 1;
-    const startSec = parseFloat(item.start) || 0;
-    const endSec = parseFloat(item.end) || startSec + defaultDurationSec;
-    const durationSec = Math.max(1, endSec - startSec);
-    const timestamp = `${startSec}–${endSec} detik`;
-    const details = extractSegmentDetails(item.body, id, matches.length);
-
-    segments.push({
-      id,
-      title: `Segmen Prompt Klip ${id}`,
-      timestamp,
-      startSec,
-      endSec,
-      durationSec,
-      content: item.body,
-      ...details,
-    });
-  });
-
-  return segments;
+  return [];
 }
 
 export default function SplitPromptViewer({
@@ -450,23 +518,35 @@ export default function SplitPromptViewer({
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [copiedAllPrompts, setCopiedAllPrompts] = useState(false);
   const [copiedClipKey, setCopiedClipKey] = useState<string | null>(null);
+  const [copiedMasterPrompt, setCopiedMasterPrompt] = useState(false);
+  const [copiedNegativePrompt, setCopiedNegativePrompt] = useState(false);
+  const [expandedSegments, setExpandedSegments] = useState<Record<number, boolean>>({});
   const [isBatchPhotoModalOpen, setIsBatchPhotoModalOpen] = useState(false);
 
   const seoInfo = parseSeoCaptionAndHashtags(rawPrompt);
   const defaultSec = parseInt(segmentDuration, 10) || 10;
   const segments = parseClipSegments(rawPrompt, defaultSec);
+  const videoAnalysis = extractVideoAnalysis(rawPrompt);
+  const masterPromptText = extractMasterPromptText(rawPrompt);
+  const negativePromptText = extractNegativePromptText(rawPrompt);
+  const technicalSummary = extractTechnicalSummaryData(rawPrompt);
 
   const displayCaption = seoInfo?.caption || sourceCaption || '';
   const hashtagChips = seoInfo?.tagsList && seoInfo.tagsList.length > 0 ? seoInfo.tagsList.slice(0, 5) : [];
 
-  // Copy individual hashtag
+  const toggleSegmentExpand = (id: number) => {
+    setExpandedSegments((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
   const handleCopyTag = (tag: string) => {
     navigator.clipboard.writeText(tag);
     setCopiedTag(tag);
     setTimeout(() => setCopiedTag(null), 2000);
   };
 
-  // Copy caption only
   const handleCopyCaption = () => {
     if (!displayCaption) return;
     navigator.clipboard.writeText(displayCaption.trim());
@@ -475,7 +555,6 @@ export default function SplitPromptViewer({
     learningSync.track('caption_copied', { length: displayCaption.length });
   };
 
-  // Copy hashtags only
   const handleCopyHashtags = () => {
     if (hashtagChips.length === 0) return;
     const textToCopy = hashtagChips.map((t) => (t.startsWith('#') ? t : `#${t}`)).join(' ');
@@ -484,13 +563,26 @@ export default function SplitPromptViewer({
     setTimeout(() => setCopiedHashtags(false), 2000);
   };
 
-  // Copy all clip prompts
+  const handleCopyMasterPrompt = () => {
+    if (!masterPromptText) return;
+    navigator.clipboard.writeText(masterPromptText);
+    setCopiedMasterPrompt(true);
+    setTimeout(() => setCopiedMasterPrompt(false), 2000);
+  };
+
+  const handleCopyNegativePrompt = () => {
+    if (!negativePromptText) return;
+    navigator.clipboard.writeText(negativePromptText);
+    setCopiedNegativePrompt(true);
+    setTimeout(() => setCopiedNegativePrompt(false), 2000);
+  };
+
   const handleCopyAllPrompts = () => {
     if (segments.length === 0) return;
     const combined = segments
       .map((clip) => {
         const p = (clip.masterPrompt || clip.content || '').trim().replace(/^```(?:text)?\n?|```$/g, '');
-        return `[Klip ${clip.id} - ${clip.timestamp}]\n${p}`;
+        return `[Segmen ${clip.id} - ${clip.timestamp} - ${clip.stageLabel || ''}]\n${p}`;
       })
       .join('\n\n---\n\n');
 
@@ -500,32 +592,32 @@ export default function SplitPromptViewer({
     learningSync.track('prompt_copied', { type: 'all_clips', total: segments.length });
   };
 
-  // Copy individual clip prompt
-  const handleCopyClipPrompt = (clipId: number, text: string) => {
+  const handleCopyClipPrompt = (clipId: number | string, text: string) => {
     const cleanText = text.trim().replace(/^```(?:text)?\n?|```$/g, '');
     navigator.clipboard.writeText(cleanText);
     const key = `clip_${clipId}`;
     setCopiedClipKey(key);
     setTimeout(() => setCopiedClipKey(null), 2000);
-    learningSync.track('prompt_copied', { type: 'single_clip', clipId });
   };
 
-  // Download all as TXT
   const handleDownloadTxt = () => {
     const text = [
-      `=== EKSTRAK PROMPT VIDEO ===`,
+      `=== EKSTRAK PROMPT DARI VIDEO ===`,
       `Target AI: ${targetAI.toUpperCase()}`,
       `Durasi Per Klip: ${segmentDuration} Detik\n`,
+      videoAnalysis ? `--- ANALISIS VIDEO ---\nVisual: ${videoAnalysis.visualAndStyle}\nAudio: ${videoAnalysis.audioAndMusic}\nKamera: ${videoAnalysis.cameraAndFraming}\nLighting: ${videoAnalysis.lightingAndMood}\n` : '',
       `--- CAPTION SEO ---`,
       displayCaption || '',
       `\n--- HASHTAG RELEVAN (MAX 5) ---`,
       hashtagChips.join(' '),
-      `\n--- MASTER PROMPTS PER KLIP ---`,
+      `\n--- BREAKDOWN SEGMEN & MICRO-CLIP ---`,
       ...segments.map(
         (s) =>
-          `\n[KLIP ${s.id} - ${s.timestamp}]\n${(s.masterPrompt || s.content || '').trim().replace(/^```(?:text)?\n?|```$/g, '')}`
+          `\n[SEGMEN ${s.id} - ${s.timestamp} ${s.stageLabel ? `(${s.stageLabel})` : ''}]\n${(s.masterPrompt || s.content || '').trim().replace(/^```(?:text)?\n?|```$/g, '')}`
       ),
-    ].join('\n');
+      masterPromptText ? `\n--- MASTER PROMPT (FULL VIDEO) ---\n${masterPromptText}` : '',
+      negativePromptText ? `\n--- NEGATIVE PROMPT ---\n${negativePromptText}` : '',
+    ].filter(Boolean).join('\n');
 
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -538,26 +630,38 @@ export default function SplitPromptViewer({
 
   return (
     <div className="space-y-6">
-      {/* Utility Bar */}
-      <div className="flex items-center justify-end gap-2 pb-1">
-        <button
-          type="button"
-          onClick={() => setViewMode(viewMode === 'cards' ? 'raw' : 'cards')}
-          className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-        >
-          <FileText className="w-3.5 h-3.5 text-slate-600" />
-          <span>{viewMode === 'cards' ? 'Format Markdown' : 'Tampilan Kartu'}</span>
-        </button>
+      {/* Top Utility Bar */}
+      <div className="flex items-center justify-between gap-2 pb-1 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-[#5b50e5]" />
+            Hasil Analisis & Breakdown Video
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
+            {segments.length} Segmen
+          </span>
+        </div>
 
-        <button
-          type="button"
-          onClick={handleDownloadTxt}
-          className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-          title="Unduh seluruh prompt dalam file teks"
-        >
-          <Download className="w-3.5 h-3.5 text-slate-600" />
-          <span>Unduh .TXT</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === 'cards' ? 'raw' : 'cards')}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+          >
+            <FileText className="w-3.5 h-3.5 text-slate-600" />
+            <span>{viewMode === 'cards' ? 'Format Markdown' : 'Tampilan Kartu'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadTxt}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="Unduh seluruh prompt dalam file teks"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-600" />
+            <span>Unduh .TXT</span>
+          </button>
+        </div>
       </div>
 
       {viewMode === 'raw' ? (
@@ -580,19 +684,78 @@ export default function SplitPromptViewer({
           </div>
         </div>
       ) : (
-        /* Unified Cards View matching Image 1 (4).jpeg exactly */
+        /* Structured Cards View */
         <div className="space-y-6">
-          {/* 1. CAPTION SEO TIKTOK / REELS / SHORTS CARD */}
+          {/* 1. ANALISIS VIDEO CARD */}
+          {videoAnalysis && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-4"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Clapperboard className="w-4 h-4 text-[#5b50e5]" />
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Analisis Video & Elemen Visual
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+                {videoAnalysis.visualAndStyle && (
+                  <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <Video className="w-3.5 h-3.5 text-[#5b50e5]" />
+                      <span>Visual & Gaya</span>
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">{videoAnalysis.visualAndStyle}</p>
+                  </div>
+                )}
+
+                {videoAnalysis.audioAndMusic && (
+                  <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Audio & Musik</span>
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">{videoAnalysis.audioAndMusic}</p>
+                  </div>
+                )}
+
+                {videoAnalysis.cameraAndFraming && (
+                  <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <Camera className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Kamera & Lensa</span>
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">{videoAnalysis.cameraAndFraming}</p>
+                  </div>
+                )}
+
+                {videoAnalysis.lightingAndMood && (
+                  <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Lighting & Mood</span>
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">{videoAnalysis.lightingAndMood}</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* 2. CAPTION SEO TIKTOK / REELS / SHORTS CARD */}
           {displayCaption && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-6 sm:p-7 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
+              transition={{ delay: 0.05 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-sky-600" />
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                     Caption SEO TikTok / Reels / Shorts
                   </span>
                 </div>
@@ -609,25 +772,25 @@ export default function SplitPromptViewer({
                   <span>{copiedCaption ? 'Tersalin' : 'Salin Caption'}</span>
                 </button>
               </div>
-              <p className="text-slate-800 text-sm leading-relaxed whitespace-pre-wrap font-normal">
+              <p className="text-slate-800 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-normal">
                 {displayCaption}
               </p>
             </motion.div>
           )}
 
-          {/* 2. HASHTAG RELEVAN & SEO SEARCH (MAX 5 TAG) CARD */}
+          {/* 3. HASHTAG CARD (MAX 5 TAG) */}
           {hashtagChips.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 }}
-              className="p-6 sm:p-7 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
+              transition={{ delay: 0.1 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Hash className="w-4 h-4 text-sky-600" />
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Hashtag Relevan & SEO Search (Max 5 Tag)
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    5 Hashtag Teroptimasi (1 Broad + 2 Niche + 2 Long-Tail)
                   </span>
                 </div>
                 <button
@@ -640,10 +803,10 @@ export default function SplitPromptViewer({
                   ) : (
                     <Copy className="w-3.5 h-3.5 text-slate-500" />
                   )}
-                  <span>{copiedHashtags ? 'Tersalin' : 'Salin Hashtag'}</span>
+                  <span>{copiedHashtags ? 'Tersalin' : 'Salin Semua Hashtag'}</span>
                 </button>
               </div>
-              <div className="flex items-center gap-2.5 flex-wrap pt-0.5">
+              <div className="flex items-center gap-2 flex-wrap pt-0.5">
                 {hashtagChips.map((tag, tIdx) => {
                   const cleanTag = tag.startsWith('#') ? tag : `#${tag}`;
                   const isThisCopied = copiedTag === cleanTag;
@@ -652,7 +815,7 @@ export default function SplitPromptViewer({
                       key={tIdx}
                       type="button"
                       onClick={() => handleCopyTag(cleanTag)}
-                      className="group px-3 py-1.5 rounded-lg bg-sky-50/80 hover:bg-sky-100 text-sky-700 border border-sky-200/60 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                      className="group px-3 py-1.5 rounded-lg bg-sky-50/80 hover:bg-sky-100 text-sky-700 border border-sky-200/60 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                       title={`Salin ${cleanTag}`}
                     >
                       <span>{cleanTag}</span>
@@ -668,47 +831,46 @@ export default function SplitPromptViewer({
             </motion.div>
           )}
 
-          {/* 3. HASIL SPLIT PROMPT VIDEO SECTION */}
+          {/* 4. BREAKDOWN PER SEGMEN & MICRO-CLIP */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
+            transition={{ delay: 0.15 }}
             className="space-y-4 pt-1"
           >
-            {/* Section Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-2xs">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#5b50e5] shadow-2xs">
                   <Film className="w-5 h-5" />
                 </div>
                 <div>
                   <h4 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                    Hasil Split Prompt Video
+                    Breakdown Per Segmen & Micro-Clip
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Dipecah per {segmentDuration === 'auto' ? '10 detik' : `${segmentDuration} detik`} · Target: {targetAI.toUpperCase()}
+                    Pecah durasi: {segmentDuration === 'auto' ? 'Penuh' : `${segmentDuration}s`} · Setiap segmen di-breakdown per micro-clip 1–2 detik
                   </p>
                 </div>
               </div>
 
               {segments.length > 0 && (
-                <div className="flex items-center gap-2.5 flex-wrap self-end sm:self-auto">
+                <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
                   {onSendToPhotoPrompt && (
                     <button
                       type="button"
                       onClick={() => setIsBatchPhotoModalOpen(true)}
                       className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-2xs"
-                      title="Generate prompt foto untuk seluruh klip ini sekaligus"
                     >
                       <Camera className="w-4 h-4 text-slate-600" />
-                      <span>Generate Semua Prompt Foto ({segments.length} Klip)</span>
+                      <span>Generate Semua Prompt Foto ({segments.length} Segmen)</span>
                     </button>
                   )}
 
                   <button
                     type="button"
                     onClick={handleCopyAllPrompts}
-                    className="px-4 py-2 rounded-xl bg-[#005ab3] hover:bg-[#004d9c] text-white text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
+                    className="px-4 py-2 rounded-xl bg-[#5b50e5] hover:bg-[#4f46e5] text-white text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
                   >
                     {copiedAllPrompts ? (
                       <Check className="w-4 h-4 text-emerald-200" />
@@ -716,14 +878,14 @@ export default function SplitPromptViewer({
                       <Copy className="w-4 h-4 text-white" />
                     )}
                     <span>
-                      {copiedAllPrompts ? 'Tersalin' : `Salin Semua ${segments.length} Prompt`}
+                      {copiedAllPrompts ? 'Tersalin' : `Salin Semua ${segments.length} Segmen`}
                     </span>
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Clip Cards List */}
+            {/* Segments list */}
             {segments.length === 0 ? (
               <div className="p-8 sm:p-12 rounded-2xl bg-white border border-slate-200/80 text-center space-y-2.5 shadow-xs">
                 <Film className="w-10 h-10 text-slate-300 mx-auto" />
@@ -736,50 +898,52 @@ export default function SplitPromptViewer({
               </div>
             ) : (
               <div className="space-y-4">
-                {segments.map((clip, cIdx) => {
-                  const clipKey = `clip_${clip.id}`;
-                  const isCopied = copiedClipKey === clipKey;
-                  const promptText = (clip.masterPrompt || clip.content || '')
+                {segments.map((seg, sIdx) => {
+                  const segKey = `seg_${seg.id}`;
+                  const isCopied = copiedClipKey === segKey;
+                  const promptText = (seg.masterPrompt || seg.content || '')
                     .trim()
                     .replace(/^```(?:text)?\n?|```$/g, '');
+                  const hasMicroClips = seg.microClips && seg.microClips.length > 0;
+                  const isExpanded = expandedSegments[seg.id] ?? true;
 
                   return (
                     <div
-                      key={clip.id || cIdx}
-                      className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3.5 hover:border-slate-300 transition-all"
+                      key={seg.id || sIdx}
+                      className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden hover:border-slate-300 transition-all"
                     >
-                      {/* Card Top Row: Header + Aksi */}
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                        {/* Header details */}
+                      {/* Segment Card Header */}
+                      <div className="p-5 sm:p-6 bg-white border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-600 font-bold text-xs border border-blue-100">
-                            #{clip.id}
+                          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-[#5b50e5] font-bold text-xs border border-indigo-100">
+                            #{seg.id} Segmen Prompt Klip {seg.id}
                           </span>
                           <span className="text-sm sm:text-base font-bold text-slate-900">
-                            Segmen Prompt Klip {clip.id}
+                            {seg.timestamp}
                           </span>
-                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
-                            {clip.timestamp}
-                          </span>
+                          {seg.stageLabel && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                              Stage: {seg.stageLabel}
+                            </span>
+                          )}
+                          {hasMicroClips && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium border border-emerald-200/50">
+                              {seg.microClips!.length} micro-clip (1–2s)
+                            </span>
+                          )}
                         </div>
 
-                        {/* Action buttons */}
                         <div className="flex items-center gap-2 self-end sm:self-auto">
                           {onSendToPhotoPrompt && (
                             <button
                               type="button"
                               onClick={() => {
-                                let promptToPass = `Visual adegan klip [${clip.timestamp}]: ${promptText}`;
-                                const negMatch = promptText.match(
-                                  /\[Negative Prompt\]:\s*([\s\S]*?)(?=\n\[|$)/i
-                                );
-                                let negPrompt = '';
-                                if (negMatch && negMatch[1]) {
-                                  negPrompt = negMatch[1].trim();
-                                  promptToPass += `\n\nNegative Prompt: ${negPrompt}`;
+                                let promptToPass = `Visual adegan segmen [${seg.timestamp}]: ${promptText}`;
+                                if (negativePromptText) {
+                                  promptToPass += `\n\nNegative Prompt: ${negativePromptText}`;
                                 }
                                 onSendToPhotoPrompt(promptToPass, {
-                                  negativePrompt: negPrompt || undefined,
+                                  negativePrompt: negativePromptText || undefined,
                                 });
                               }}
                               className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
@@ -792,36 +956,221 @@ export default function SplitPromptViewer({
 
                           <button
                             type="button"
-                            onClick={() => handleCopyClipPrompt(clip.id, promptText)}
-                            className="px-3 py-1.5 rounded-lg bg-blue-50/70 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                            title="Salin prompt klip ini"
+                            onClick={() => handleCopyClipPrompt(seg.id, promptText)}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                            title="Salin seluruh prompt klip ini"
                           >
                             {isCopied ? (
                               <Check className="w-3.5 h-3.5 text-emerald-600" />
                             ) : (
-                              <Copy className="w-3.5 h-3.5 text-blue-600" />
+                              <Copy className="w-3.5 h-3.5 text-indigo-600" />
                             )}
                             <span>{isCopied ? 'Tersalin' : 'Salin Prompt Klip'}</span>
                           </button>
+
+                          {hasMicroClips && (
+                            <button
+                              type="button"
+                              onClick={() => toggleSegmentExpand(seg.id)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+                              title={isExpanded ? 'Sembunyikan micro-clip' : 'Tampilkan micro-clip'}
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="w-4 h-4" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      {/* Subheader: MASTER PROMPT AI KLIP {id} (SIAP COPY) */}
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-0.5">
-                        <Sparkles className="w-3 h-3 text-slate-400" />
-                        <span>MASTER PROMPT AI KLIP {clip.id} (SIAP COPY)</span>
+                      {/* MASTER PROMPT AI KLIP SECTION */}
+                      <div className="p-5 sm:p-6 bg-slate-50/70 border-b border-slate-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-[#5b50e5]" />
+                            MASTER PROMPT AI KLIP {seg.id}
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-medium">Veo • Runway • Kling • Sora</span>
+                        </div>
+                        <div className="p-3.5 rounded-xl bg-white border border-slate-200/90 text-xs sm:text-sm font-mono text-slate-800 leading-relaxed whitespace-pre-wrap select-all shadow-2xs">
+                          {promptText}
+                        </div>
                       </div>
 
-                      {/* Prompt Body Box */}
-                      <div className="p-4 sm:p-5 rounded-xl bg-[#f8fafc] border border-slate-100 text-slate-800 text-sm leading-relaxed whitespace-pre-wrap select-text font-normal min-h-[90px]">
-                        {promptText}
-                      </div>
+                      {/* Micro-Clips Breakdown List */}
+                      {hasMicroClips && isExpanded ? (
+                        <div className="p-5 sm:p-6 bg-slate-50/50 space-y-3">
+                          <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-[#5b50e5]" />
+                            <span>BREAKDOWN DETAIL:</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2.5">
+                            {seg.microClips!.map((mc, mcIdx) => {
+                              const mcKey = `mc_${seg.id}_${mcIdx}`;
+                              const isMcCopied = copiedClipKey === mcKey;
+                              return (
+                                <div
+                                  key={mcIdx}
+                                  className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all space-y-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-xs">
+                                        Scene {mcIdx + 1} {mc.timeRange ? `(${mc.timeRange})` : ''}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyClipPrompt(mcKey, mc.masterPrompt || `${mc.visual} ${mc.aksi}`)}
+                                      className="px-2.5 py-1 rounded-md bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="Salin prompt micro-clip ini"
+                                    >
+                                      {isMcCopied ? (
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                      ) : (
+                                        <Copy className="w-3 h-3 text-slate-500" />
+                                      )}
+                                      <span>{isMcCopied ? 'Tersalin' : 'Salin Klip'}</span>
+                                    </button>
+                                  </div>
+
+                                  <div className="text-xs space-y-1 text-slate-700">
+                                    {mc.visual && (
+                                      <div>
+                                        <strong className="text-slate-900">Visual:</strong> {mc.visual}
+                                      </div>
+                                    )}
+                                    {mc.aksi && (
+                                      <div>
+                                        <strong className="text-slate-900">Action:</strong> {mc.aksi}
+                                      </div>
+                                    )}
+                                    {mc.suara && (
+                                      <div className="text-indigo-700">
+                                        <strong className="text-indigo-900">Suara:</strong> "{mc.suara}"
+                                      </div>
+                                    )}
+                                    {mc.subteks && (
+                                      <div className="text-amber-700">
+                                        <strong className="text-amber-900">Subjek:</strong> {mc.subteks.replace(/^Subjek:\s*/i, '')}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
               </div>
             )}
           </motion.div>
+
+          {/* 5. MASTER PROMPT (FULL VIDEO) CARD */}
+          {masterPromptText && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Master Prompt (Full Video — Siap Pakai di Runway, Sora, Veo, Kling)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyMasterPrompt}
+                  className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                >
+                  {copiedMasterPrompt ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-amber-600" />
+                  )}
+                  <span>{copiedMasterPrompt ? 'Tersalin' : 'Salin Master Prompt'}</span>
+                </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#f8fafc] border border-slate-100 text-slate-800 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap select-text font-normal font-mono">
+                {masterPromptText}
+              </div>
+            </motion.div>
+          )}
+
+          {/* 6. NEGATIVE PROMPT CARD */}
+          {negativePromptText && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-500" />
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Negative Prompt (What to Avoid)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyNegativePrompt}
+                  className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                >
+                  {copiedNegativePrompt ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-rose-600" />
+                  )}
+                  <span>{copiedNegativePrompt ? 'Tersalin' : 'Salin Negative Prompt'}</span>
+                </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-rose-50/30 border border-rose-100 text-slate-700 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap select-text font-mono">
+                {negativePromptText}
+              </div>
+            </motion.div>
+          )}
+
+          {/* 7. RINGKASAN TEKNIS */}
+          {technicalSummary && Object.keys(technicalSummary).length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <BarChart3 className="w-4 h-4 text-slate-600" />
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Ringkasan Teknis Produksi Video
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                {Object.entries(technicalSummary).map(([key, val], idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-0.5">
+                    <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block">
+                      {key}
+                    </span>
+                    <span className="text-slate-800 font-bold text-sm truncate block">
+                      {val}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
         </div>
       )}
 
@@ -830,7 +1179,7 @@ export default function SplitPromptViewer({
         <BatchPhotoPromptModal
           isOpen={isBatchPhotoModalOpen}
           onClose={() => setIsBatchPhotoModalOpen(false)}
-          conceptTitle={`Ekstrak Prompt Video (${segments.length} Klip Segmen)`}
+          conceptTitle={`Ekstrak Prompt Video (${segments.length} Segmen)`}
           clips={segments.map((s) => ({
             id: s.id,
             title: s.title,
@@ -840,11 +1189,11 @@ export default function SplitPromptViewer({
           }))}
           onConfirm={(opts) => {
             const batchClipsText =
-              `KONSEP EKSTRAK PROMPT VIDEO BATCH PROMPT FOTO (${segments.length} KLIP):\n` +
+              `KONSEP EKSTRAK PROMPT VIDEO BATCH PROMPT FOTO (${segments.length} SEGMEN):\n` +
               segments
                 .map(
                   (s) =>
-                    `### [${s.timestamp}] Klip ${s.id}: ${s.title}\nDeskripsi Adegan Visual:\n${s.masterPrompt || s.content}`
+                    `### [${s.timestamp}] Segmen ${s.id}: ${s.title} (${s.stageLabel || ''})\nDeskripsi Adegan Visual:\n${s.masterPrompt || s.content}`
                 )
                 .join('\n\n---\n\n');
 

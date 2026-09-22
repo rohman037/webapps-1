@@ -82,8 +82,39 @@ export function parseMarkdownToStructuredOutput(markdown: string): {
   segments: Segment[];
   masterPrompt?: string;
   negativePrompt?: string;
+  videoAnalysis?: {
+    visualAndStyle: string;
+    audioAndMusic: string;
+    cameraAndFraming: string;
+    lightingAndMood: string;
+  };
+  technicalSummary?: Record<string, string>;
 } {
   const hashtags = Array.from(new Set(markdown.match(/#[\w\d_]+/g) || [])).slice(0, 5);
+
+  // Video Analysis Extraction
+  let videoAnalysis: {
+    visualAndStyle: string;
+    audioAndMusic: string;
+    cameraAndFraming: string;
+    lightingAndMood: string;
+  } | undefined = undefined;
+
+  const analysisMatch = markdown.match(/##\s*🎬?\s*ANALISIS VIDEO[^\n]*\n([\s\S]*?)(?=##|$)/i);
+  if (analysisMatch) {
+    const aText = analysisMatch[1];
+    const vis = aText.match(/(?:Visual\s*&\s*Gaya|Visual|Gaya)[:\s]*([^\n]+)/i);
+    const aud = aText.match(/(?:Audio\s*&\s*Musik|Audio|Musik)[:\s]*([^\n]+)/i);
+    const kam = aText.match(/(?:Kamera\s*&\s*Lensa|Kamera|Lensa)[:\s]*([^\n]+)/i);
+    const lig = aText.match(/(?:Lighting\s*&\s*Mood|Lighting|Mood)[:\s]*([^\n]+)/i);
+
+    videoAnalysis = {
+      visualAndStyle: vis ? vis[1].replace(/^\*+|\*+$/g, '').trim() : '',
+      audioAndMusic: aud ? aud[1].replace(/^\*+|\*+$/g, '').trim() : '',
+      cameraAndFraming: kam ? kam[1].replace(/^\*+|\*+$/g, '').trim() : '',
+      lightingAndMood: lig ? lig[1].replace(/^\*+|\*+$/g, '').trim() : '',
+    };
+  }
 
   let caption = '';
   const captionMatch = markdown.match(/##\s*📋?\s*CAPTION[^\n]*\n([\s\S]*?)(?=##|$)/i);
@@ -103,28 +134,66 @@ export function parseMarkdownToStructuredOutput(markdown: string): {
     negativePrompt = negMatch[1].trim();
   }
 
+  // Technical summary
+  const technicalSummary: Record<string, string> = {};
+  const techMatch = markdown.match(/##\s*📊?\s*RINGKASAN TEKNIS[^\n]*\n([\s\S]*?)(?=##|$)/i);
+  if (techMatch) {
+    const lines = techMatch[1].split('\n');
+    for (const line of lines) {
+      const parts = line.replace(/^[\s\-*]+/, '').split(':');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const val = parts.slice(1).join(':').trim();
+        if (key && val) {
+          technicalSummary[key] = val;
+        }
+      }
+    }
+  }
+
   const segments: Segment[] = [];
-  const segmentRegex = /###\s*📹?\s*SEGMEN\s*(\d+)[\s—\-]*\[?([^\]\n]*)\]?[\s\S]*?\*\*Stage:\s*([^\*]+)\*\*[\s\S]*?```([\s\S]*?)```/gi;
-  let match;
-  while ((match = segmentRegex.exec(markdown)) !== null) {
-    const segIdx = parseInt(match[1], 10) || segments.length + 1;
-    const timeRange = (match[2] || '').trim();
-    const stageLabel = (match[3] || '').trim();
-    const rawClipsText = match[4] || '';
+  
+  // Robust segment splitting: split by "### 📹 SEGMEN"
+  const breakdownMatch = markdown.match(/##\s*🎞️?\s*BREAKDOWN PER SEGMEN[^\n]*\n([\s\S]*?)(?=\n##\s*📊|\n##\s*🎯|\n##\s*🚫|$)/i);
+  const breakdownText = breakdownMatch ? breakdownMatch[1] : markdown;
 
+  const segmentBlocks = breakdownText.split(/(?=\n###\s*📹?\s*SEGMEN|\n##\s*📹?\s*SEGMEN)/gi);
+
+  for (const block of segmentBlocks) {
+    const headerMatch = block.match(/(?:###|##)\s*📹?\s*SEGMEN\s*(\d+)[\s—\-]*\[?([^\]\n]*)\]?/i);
+    if (!headerMatch) continue;
+
+    const segIdx = parseInt(headerMatch[1], 10) || segments.length + 1;
+    let timeRange = (headerMatch[2] || '').trim();
+    
+    const stageMatch = block.match(/\*\*Stage:\s*([^\*\n]+)\*\*/i);
+    const stageLabel = stageMatch ? stageMatch[1].trim() : 'Sinematik';
+
+    // Extract micro-clips inside this segment
     const microClips: MicroClip[] = [];
-    const clipBlocks = rawClipsText.split(/\n(?=\d+[–\-\.]\d+|\d+\s*detik)/i);
-    for (const block of clipBlocks) {
-      const timeMatch = block.match(/^([^\n]+)/);
-      const visMatch = block.match(/Visual:\s*([^\n]+)/i);
-      const aksMatch = block.match(/Aksi:\s*([^\n]+)/i);
-      const suaMatch = block.match(/Suara:\s*"?([^"\n]+)"?/i);
-      const subMatch = block.match(/Subteks:\s*"?([^"\n]+)"?/i);
 
-      if (visMatch || aksMatch) {
+    // Check codeblock first, fallback to entire block
+    const codeBlockMatch = block.match(/```(?:text)?\n([\s\S]*?)```/);
+    const bodyContent = codeBlockMatch ? codeBlockMatch[1] : block;
+
+    // Split into individual micro clips
+    // Matches patterns like "[0–2 detik]", "0-2 detik", "[Micro-clip 1, contoh: 0–2 detik]"
+    const clipRegex = /(?:\[(?:Micro-clip\s*\d+,?\s*(?:contoh:\s*)?)?(\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s)?)\]|(\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s)))\s*\n([\s\S]*?)(?=(?:\[(?:Micro-clip\s*\d+,?\s*(?:contoh:\s*)?)?\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s)?\]|\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s))\s*\n|$)/gi;
+
+    let clipMatch;
+    while ((clipMatch = clipRegex.exec(bodyContent)) !== null) {
+      const rawTime = (clipMatch[1] || clipMatch[2] || '').trim();
+      const clipBody = clipMatch[3] || '';
+
+      const visMatch = clipBody.match(/Visual:\s*([^\n]+)/i);
+      const aksMatch = clipBody.match(/Aksi:\s*([^\n]+)/i);
+      const suaMatch = clipBody.match(/Suara:\s*"?([^"\n]+)"?/i);
+      const subMatch = clipBody.match(/Subteks:\s*"?([^"\n]+)"?/i);
+
+      if (visMatch || aksMatch || clipBody.trim()) {
         microClips.push({
-          timeRange: timeMatch ? timeMatch[1].trim() : '',
-          visual: visMatch ? visMatch[1].trim() : '',
+          timeRange: rawTime.includes('detik') ? rawTime : `${rawTime} detik`,
+          visual: visMatch ? visMatch[1].trim() : clipBody.trim(),
           aksi: aksMatch ? aksMatch[1].trim() : '',
           suara: suaMatch ? suaMatch[1].trim() : null,
           subteks: subMatch ? subMatch[1].trim() : null,
@@ -132,9 +201,51 @@ export function parseMarkdownToStructuredOutput(markdown: string): {
       }
     }
 
+    // Fallback: If no microClips parsed with regex, parse lines
+    if (microClips.length === 0) {
+      const lines = bodyContent.split('\n');
+      let currentClip: Partial<MicroClip> = {};
+      for (const line of lines) {
+        const tMatch = line.match(/^\[?(\d+(?:[.,]\d+)?\s*[–\-—]\s*\d+(?:[.,]\d+)?\s*(?:detik|s)?)\]?/i);
+        if (tMatch && !line.toLowerCase().includes('segmen')) {
+          if (currentClip.visual || currentClip.aksi) {
+            microClips.push({
+              timeRange: currentClip.timeRange || '',
+              visual: currentClip.visual || '',
+              aksi: currentClip.aksi || '',
+              suara: currentClip.suara || null,
+              subteks: currentClip.subteks || null,
+            });
+          }
+          currentClip = { timeRange: tMatch[1].trim() };
+        } else if (line.match(/Visual:/i)) {
+          currentClip.visual = line.replace(/Visual:\s*/i, '').trim();
+        } else if (line.match(/Aksi:/i)) {
+          currentClip.aksi = line.replace(/Aksi:\s*/i, '').trim();
+        } else if (line.match(/Suara:/i)) {
+          currentClip.suara = line.replace(/Suara:\s*"?/i, '').replace(/"?$/, '').trim();
+        } else if (line.match(/Subteks:/i)) {
+          currentClip.subteks = line.replace(/Subteks:\s*"?/i, '').replace(/"?$/, '').trim();
+        }
+      }
+      if (currentClip.visual || currentClip.aksi) {
+        microClips.push({
+          timeRange: currentClip.timeRange || '',
+          visual: currentClip.visual || '',
+          aksi: currentClip.aksi || '',
+          suara: currentClip.suara || null,
+          subteks: currentClip.subteks || null,
+        });
+      }
+    }
+
+    if (!timeRange && microClips.length > 0) {
+      timeRange = `${microClips[0].timeRange.split(/[–\-—]/)[0]}–${microClips[microClips.length - 1].timeRange.split(/[–\-—]/)[1] || ''}`;
+    }
+
     segments.push({
       segmentIndex: segIdx,
-      timeRange,
+      timeRange: timeRange || `Segmen ${segIdx}`,
       stageLabel,
       microClips,
     });
@@ -146,5 +257,7 @@ export function parseMarkdownToStructuredOutput(markdown: string): {
     segments,
     masterPrompt,
     negativePrompt,
+    videoAnalysis,
+    technicalSummary,
   };
 }

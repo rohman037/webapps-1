@@ -35,7 +35,36 @@ export interface Segment {
   microClips: MicroClip[];
 }
 
+export interface ClipScene {
+  start: string;
+  end: string;
+  visual: string;
+  action: string;
+  camera: string;
+  subject: string;
+  subtitle: string;
+}
+
+export interface VideoClipOutput {
+  clip_number: number;
+  start_time: number;
+  end_time: number;
+  master_prompt: string;
+  scenes: ClipScene[];
+}
+
 export interface VideoToPromptOutput {
+  // Output Data Structure matching Specification
+  caption?: string;
+  hashtags?: string[];              // 5 buah
+  split_duration?: number | string;
+  clips?: VideoClipOutput[];
+  metadata?: {
+    duration: string | number;
+    total_clip: number;
+    split_duration: string;
+  };
+
   // Video meta
   videoMeta?: {
     duration: number;

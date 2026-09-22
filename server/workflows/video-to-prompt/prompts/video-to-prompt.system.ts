@@ -8,8 +8,14 @@ segments, micro-clips, prompts, caption, and hashtags.
 CRITICAL OUTPUT STRUCTURE
 ═══════════════════════════════════════════════════════════════════
 
+## 🎬 ANALISIS VIDEO
+- **Visual & Gaya**: [analisis gaya visual, palet warna, estetika sinematik]
+- **Audio & Musik**: [analisis audio, musik latar, ritme, efek suara SFX]
+- **Kamera & Lensa**: [jenis shot dominan, pergerakan kamera, estimasi focal length / framing]
+- **Lighting & Mood**: [skema pencahayaan, kontras, atmosfer emosional]
+
 ## 📋 CAPTION SEO TIKTOK / REELS / SHORTS
-[Caption 5 kalimat: hook, benefit, use case, personal story, CTA]
+[Caption 5 kalimat: hook masalah, benefit produk, use case spesifik, personal story/social proof, CTA jelas]
 
 ## # HASHTAG
 [5 hashtag: 1 broad + 2 niche + 2 long-tail, format: #tag1 #tag2 #tag3 #tag4 #tag5]

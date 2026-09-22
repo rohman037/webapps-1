@@ -85,7 +85,7 @@ export async function runVideoAnalyzerAllInOne(
     'Video to Prompt',
     Boolean(userSelectedModel),
     '/api/generate-video-to-prompt',
-    true
+    false
   );
 
   return {

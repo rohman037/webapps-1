@@ -105,7 +105,7 @@ const recordDbError = (colName: string, op: string, error: any) => {
   }
 };
 
-const safeGet = async (colName: string): Promise<any[]> => {
+export const safeGet = async (colName: string): Promise<any[]> => {
   try {
     const snap = await withTimeout(adminDb.collection(colName).get(), 4000);
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -130,7 +130,7 @@ const safeGet = async (colName: string): Promise<any[]> => {
   }
 };
 
-const safeGetOne = async (colName: string, docId: string): Promise<any | null> => {
+export const safeGetOne = async (colName: string, docId: string): Promise<any | null> => {
   try {
     const snap = await withTimeout(adminDb.collection(colName).doc(docId).get(), 4000);
     if (snap.exists) {
@@ -146,7 +146,7 @@ const safeGetOne = async (colName: string, docId: string): Promise<any | null> =
   return localStore[colName]?.[docId] || null;
 };
 
-const safeSave = async (colName: string, item: any): Promise<any> => {
+export const safeSave = async (colName: string, item: any): Promise<any> => {
   try {
     if (!item) return item;
     if (!item.id) item.id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
@@ -165,7 +165,7 @@ const safeSave = async (colName: string, item: any): Promise<any> => {
   }
 };
 
-const safeDelete = async (colName: string, id: string): Promise<void> => {
+export const safeDelete = async (colName: string, id: string): Promise<void> => {
   try {
     if (localStore[colName] && localStore[colName][id]) {
       delete localStore[colName][id];
@@ -544,9 +544,12 @@ export const dbGetApiKeys = async (): Promise<any[]> => {
 
     return items;
   } catch (e: any) {
-    console.warn(`[dbService] Fetching apiKeys failed, using local store:`, e?.message || e);
     const colName = FIRESTORE_COLLECTIONS.API_KEYS || 'apiKeys';
-    return Object.values(localStore[colName] || {});
+    const localKeys = Object.values(localStore[colName] || {});
+    if (localKeys.length === 0) {
+      console.info(`[dbService] Note: Firestore apiKeys not loaded (${e?.message || e}), using in-memory store.`);
+    }
+    return localKeys;
   }
 };
 
