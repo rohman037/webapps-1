@@ -10,6 +10,7 @@ import { analyzeProductIntelligence } from './agents/product-intelligence';
 import { generateContent } from './agents/content-generator';
 import { refineCopy } from './agents/copy-refiner';
 import { validateContentIdeasOutput } from './validators/output-validator';
+import { executeReplicaVideoWorkflow } from '@/server/services/replicaVideo';
 
 export * from './types';
 
@@ -61,7 +62,12 @@ export async function generateContentIdeasService(options: GenerateContentIdeasO
     const cached = promptResponseCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < PROMPT_CACHE_TTL_MS) {
       logger.info('[Content Ideas Cache Hit - Saved Quota]', cacheKey);
-      return { result: cached.text, modelUsed: cached.modelUsed, cached: true };
+      return {
+        result: cached.text,
+        structured: cached.structured,
+        modelUsed: cached.modelUsed,
+        cached: true,
+      };
     }
   }
 
@@ -74,6 +80,47 @@ export async function generateContentIdeasService(options: GenerateContentIdeasO
   else if (segmentDuration === '15') segSecNum = 15;
   else if (segmentDuration === 'auto') segSecNum = Math.max(4, Math.ceil(maxSecNum / 4));
   else segSecNum = Math.max(3, parseInt(segmentDuration, 10) || 6);
+
+  // Use 3-Agent Replica Video Workflow for single idea/replica requests
+  if (totalIdeas === 1) {
+    const replicaResult = await executeReplicaVideoWorkflow({
+      tiktokUrl: (tiktokShopUrl && (tiktokShopUrl.includes('tiktok.com') || tiktokShopUrl.includes('vt.tiktok.com'))) ? tiktokShopUrl : undefined,
+      videoBase64: base64Data,
+      videoMimeType: mimeType,
+      sourceTitle,
+      productNameOrTopic: topic || sourceTitle,
+      productUrl: tiktokShopUrl,
+      referenceImageBase64,
+      referenceImageMimeType,
+      targetDurationSeconds: maxSecNum,
+      splitDurationSeconds: segSecNum,
+      enableTextOverlay,
+      targetAI,
+      tone,
+      contentType,
+      customApiKey,
+      clientAccessCode,
+      preferredModel: model,
+    });
+
+    recordExecutionAndUpgrade('contentIdeas');
+
+    if (useCache) {
+      promptResponseCache.set(cacheKey, {
+        timestamp: Date.now(),
+        text: replicaResult.markdownText,
+        modelUsed: replicaResult.modelUsed,
+        structured: replicaResult.structured,
+      });
+    }
+
+    return {
+      result: replicaResult.markdownText,
+      structured: replicaResult.structured,
+      modelUsed: replicaResult.modelUsed,
+      latencyMs: replicaResult.latencyMs,
+    };
+  }
 
   const expectedClipsCount = Math.ceil(maxSecNum / segSecNum);
 

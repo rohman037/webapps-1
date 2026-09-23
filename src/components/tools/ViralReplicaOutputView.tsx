@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -14,10 +14,13 @@ import {
   Sliders,
 } from 'lucide-react';
 import type { ParsedIdea } from './ContentIdeasTool';
+import { ReplicaVideoResponse } from '@/src/types/viralReplicaContracts';
+import { ReplicaVideoResultCard } from './replica/ReplicaVideoResultCard';
 
 interface ViralReplicaOutputViewProps {
   parsedIdeas: ParsedIdea[];
   rawResult: string;
+  structuredResult?: ReplicaVideoResponse | null;
   targetAI: string;
   segmentDuration: string;
   maxDuration: number;
@@ -48,6 +51,7 @@ interface ViralReplicaOutputViewProps {
 export const ViralReplicaOutputView: React.FC<ViralReplicaOutputViewProps> = ({
   parsedIdeas,
   rawResult,
+  structuredResult,
   targetAI,
   segmentDuration,
   maxDuration,
@@ -63,6 +67,53 @@ export const ViralReplicaOutputView: React.FC<ViralReplicaOutputViewProps> = ({
   const [copiedClipKey, setCopiedClipKey] = useState<string | null>(null);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [showStrategicDetails, setShowStrategicDetails] = useState(false);
+
+  // Attempt to parse structured result from rawResult if not passed directly
+  const resolvedStructured: ReplicaVideoResponse | null = useMemo(() => {
+    if (structuredResult && structuredResult.clips && structuredResult.clips.length > 0) {
+      return structuredResult;
+    }
+    if (rawResult && rawResult.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(rawResult.trim());
+        if (parsed.clips && parsed.seo) {
+          return parsed as ReplicaVideoResponse;
+        }
+      } catch (e) {
+        // Not a pure JSON string
+      }
+    }
+    return null;
+  }, [structuredResult, rawResult]);
+
+  // If structured data is available and user wants visual cards mode
+  if (resolvedStructured && viewMode === 'cards') {
+    return (
+      <div className="space-y-6">
+        <ReplicaVideoResultCard
+          data={resolvedStructured}
+          rawMarkdownText={rawResult}
+          targetAI={targetAI}
+          segmentDuration={segmentDuration}
+          maxDuration={maxDuration}
+          refImageFile={refImageFile}
+          onSendToPhotoPrompt={onSendToPhotoPrompt}
+          onOpenBatchPhotoModal={onOpenBatchPhotoModal}
+        />
+
+        <div className="flex items-center justify-end pt-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setViewMode('raw')}
+            className="text-slate-500 hover:text-slate-900 flex items-center gap-1.5 font-medium transition-colors cursor-pointer"
+          >
+            <ListFilter className="w-3.5 h-3.5 text-slate-400" />
+            <span>Format Markdown Asli</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!parsedIdeas || parsedIdeas.length === 0) {
     return (

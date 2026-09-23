@@ -2,10 +2,11 @@ export function sanitizeCaptionsAndHashtags(text: string): string {
   if (!text) return text;
 
   const BANNED_SPAM_TAGS = new Set([
-    'fyp', 'fypシ', 'fypviral', 'foryou', 'foryoupage', 'racuntiktok',
+    'fyp', 'fypシ', 'fypviral', 'foryou', 'foryoupage', 'foru', 'racuntiktok',
     'racuntiktokshop', 'viral', 'viralvideo', 'trending', 'trendingvideo',
-    'beranda', 'fypindonesia', 'fyppage', 'viraltiktok', 'foryourpage',
-    'racunshopee', 'racuntiktokmurah', 'gayaingatfyp'
+    'beranda', 'masukberanda', 'fypindonesia', 'fyppage', 'viraltiktok', 'foryourpage',
+    'racunshopee', 'racuntiktokmurah', 'gayaingatfyp', 'xyzbca', 'explore', 'explorepage',
+    'reels', 'tiktok', 'tik_tok', 'trend', 'videoviral'
   ]);
 
   let result = text;

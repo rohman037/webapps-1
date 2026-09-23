@@ -5,6 +5,7 @@ import { fetchTikTokVideoInfo } from '@/server/core/tiktok-fetcher/service';
 import { validateVideoInput, processVideoSegmentation } from '@/server/services/videoProcessor';
 import { runVideoAnalyzerAgent, VideoAnalyzerOutput } from '@/server/agents/videoAnalyzerAgent';
 import { runPromptGenerationAgent } from '@/server/agents/promptGenerationAgent';
+import { VideoToPromptQcEngine } from './qcEngine';
 import type { VideoToPromptInput, VideoToPromptOutput, VideoClipOutput, Segment, MicroClip } from './types';
 
 export * from './types';
@@ -33,10 +34,20 @@ export async function runVideoToPromptPipeline(
         if (!effectiveInput.videoDuration && tiktokInfo.duration) {
           effectiveInput.videoDuration = tiktokInfo.duration;
         }
-        logger.info(`[video-to-prompt] Resolved TikTok title: "${tiktokInfo.title.slice(0, 50)}..."`);
+        logger.info(`[AI CONTENT CLONE ENGINE] Resolved TikTok title: "${tiktokInfo.title.slice(0, 50)}..."`);
       }
     } catch (e: any) {
       warnings.push(`Could not fetch TikTok info automatically: ${e.message}`);
+    }
+  }
+
+  // If input is text/prompt, extract snippet for title
+  if (effectiveInput.mimeType?.startsWith('text/') && effectiveInput.videoFile && !effectiveInput.sourceTitle) {
+    try {
+      const decoded = Buffer.from(effectiveInput.videoFile, 'base64').toString('utf-8');
+      effectiveInput.sourceTitle = decoded.slice(0, 150);
+    } catch {
+      // ignore
     }
   }
 
@@ -67,26 +78,27 @@ export async function runVideoToPromptPipeline(
   const cacheKey = crypto
     .createHash('sha256')
     .update(
-      `video_agent_v3_${sampleData}_${splitChoiceStr}_${effectiveInput.targetAi}_${effectiveInput.model || 'auto'}`
+      `ai_content_clone_${sampleData}_${splitChoiceStr}_${effectiveInput.targetAi}_${effectiveInput.model || 'auto'}`
     )
     .digest('hex');
 
   if (effectiveInput.useCache !== false && promptResponseCache.has(cacheKey)) {
     const cached = promptResponseCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < PROMPT_CACHE_TTL_MS) {
-      logger.info('[video-to-prompt] Serving result from high-speed cache');
+      logger.info('[AI CONTENT CLONE ENGINE] Serving result from high-speed cache');
       return cached.data;
     }
   }
 
   // STEP 3: RUN AGENT PIPELINE FOR EACH SEGMENT
-  // VIDEO ANALYZER AGENT -> PROMPT GENERATION AGENT
-  const clipsOutput: VideoClipOutput[] = [];
+  // AGENT 1 (VIRAL & VIDEO DNA ANALYST) -> AGENT 3 (PROMPT & SCENE GENERATOR)
+  let clipsOutput: VideoClipOutput[] = [];
   const segmentsForUi: Segment[] = [];
+  const analysisList: VideoAnalyzerOutput[] = [];
   let modelUsedInPipeline = effectiveInput.model || 'gemini-3.8-flash';
 
   const segmentProcessingPromises = segmentation.segments.map(async (seg) => {
-    // 1. Run Video Analyzer Agent
+    // 1. Run Agent 1: Video & Viral DNA Analyzer Agent
     const analysis: VideoAnalyzerOutput = await runVideoAnalyzerAgent({
       base64Data: effectiveInput.videoFile,
       mimeType: effectiveInput.mimeType || 'video/mp4',
@@ -102,7 +114,7 @@ export async function runVideoToPromptPipeline(
       overallContext: effectiveInput.customInstructions,
     });
 
-    // 2. Run Prompt Generation Agent
+    // 2. Run Agent 3: Prompt & Scene Generation Agent
     const promptGen = await runPromptGenerationAgent({
       analysis,
       clipNumber: seg.clip_number,
@@ -125,14 +137,16 @@ export async function runVideoToPromptPipeline(
   const processedResults = await Promise.all(segmentProcessingPromises);
   apiCallsUsed += processedResults.length * 2;
 
-  // Assemble clips
+  // Assemble initial clips and collect analyses
   for (const item of processedResults) {
-    const { seg, promptGen } = item;
+    const { seg, analysis, promptGen } = item;
+    analysisList.push(analysis);
 
     const clipObj: VideoClipOutput = {
       clip_number: seg.clip_number,
       start_time: seg.start_time,
       end_time: seg.end_time,
+      duration_label: seg.duration_label,
       master_prompt: promptGen.master_prompt,
       scenes: promptGen.scenes.map((s) => ({
         start: s.start,
@@ -145,9 +159,59 @@ export async function runVideoToPromptPipeline(
       })),
     };
     clipsOutput.push(clipObj);
+  }
 
-    // Format legacy / UI segment structure
-    const microClips: MicroClip[] = promptGen.scenes.map((s) => ({
+  // STEP 4: SYNTHESIZE VIDEO DNA, VIRAL DNA & SEO
+  const firstAnalysis = analysisList[0] || {} as VideoAnalyzerOutput;
+  const productOrSubject = effectiveInput.sourceTitle || firstAnalysis.subject || 'Produk Unggulan';
+
+  // Extract core keywords
+  const subjectWords = productOrSubject
+    .replace(/[^\w\s]/gi, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+
+  const primaryKeyword = subjectWords.slice(0, 2).join(' ') || 'Produk Viral';
+  const categoryKeyword = firstAnalysis.environment || 'Kategori Home Living';
+
+  // High-relevance 5 Hashtags:
+  // 30% Product-specific (2) + 30% Category (1) + 20% Audience (1) + 20% Search Intent (1)
+  const productTag1 = `#${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Produk'}${subjectWords[1] ? subjectWords[1].charAt(0).toUpperCase() + subjectWords[1].slice(1).toLowerCase() : 'Viral'}`;
+  const productTag2 = `#Review${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Produk'}`;
+  const categoryTag = `#Rekomendasi${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Belanja'}`;
+  const audienceTag = `#Racun${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'TikTok'}`;
+  const intentTag = `#Spill${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Barang'}`;
+
+  let hashtagsList = [productTag1, productTag2, categoryTag, audienceTag, intentTag];
+
+  // Natural high-converting SEO Caption with Hook, Value Proposition & CTA
+  let captionText = `Pernah kepikiran nggak kalau ${productOrSubject} bisa sefungsional dan semulus ini? 🔥 Visual sinematik detail memperlihatkan keunggulan nyata tanpa rekayasa. Pas banget buat kamu yang cari kualitas terbaik dan kepuasan maksimal. Cek selengkapnya sekarang sebelum kehabisan!`;
+
+  // STEP 5: QUALITY CONTROL INTELLIGENCE SYSTEM
+  // Evaluates 6 checks: Product Consistency, Prompt Quality, Caption Match, Hashtag Validation, Scene Timing, Audio-Visual Match
+  const splitDurationNum = typeof effectiveInput.segmentDuration === 'number'
+    ? effectiveInput.segmentDuration
+    : (parseInt(String(effectiveInput.segmentDuration), 10) || 10);
+
+  const qcEvaluation = VideoToPromptQcEngine.evaluate({
+    productOrSubject,
+    clips: clipsOutput,
+    caption: captionText,
+    hashtags: hashtagsList,
+    analysisList,
+    splitDuration: splitDurationNum,
+  });
+
+  // Apply auto-corrections from QC
+  captionText = qcEvaluation.correctedCaption;
+  hashtagsList = qcEvaluation.correctedHashtags;
+  clipsOutput = qcEvaluation.correctedClips;
+
+  // Build legacy / UI segments
+  for (let idx = 0; idx < clipsOutput.length; idx++) {
+    const c = clipsOutput[idx];
+    const segInfo = segmentation.segments[idx];
+    const microClips: MicroClip[] = c.scenes.map((s) => ({
       timeRange: `${s.start}–${s.end}`,
       visual: s.visual,
       aksi: `${s.action} | Camera: ${s.camera}`,
@@ -156,32 +220,59 @@ export async function runVideoToPromptPipeline(
     }));
 
     segmentsForUi.push({
-      segmentIndex: seg.clip_number,
-      timeRange: seg.duration_label,
-      stageLabel: seg.clip_number === 1 ? 'HOOK' : seg.clip_number === segmentation.segments.length ? 'CTA' : 'DEMO',
+      segmentIndex: c.clip_number,
+      timeRange: segInfo?.duration_label || `${c.start_time}-${c.end_time}s`,
+      stageLabel: c.clip_number === 1 ? 'HOOK' : c.clip_number === clipsOutput.length ? 'CTA' : 'DEMO',
       microClips,
     });
   }
 
-  // Generate SEO Caption and 5 Optimized Hashtags
-  const titleHint = effectiveInput.sourceTitle || 'Video Sinematik';
-  const captionText = `${titleHint} — Visual sinematik berkecepatan tinggi dengan komposisi pencahayaan dramatis dan pergerakan kamera profesional. Dibuat khusus untuk engagement maksimal dan retensi audiens tinggi. Tonton sampai akhir untuk detail visual selengkapnya!`;
-  
-  const hashtagsList = [
-    '#FYP',
-    '#VideoViral',
-    '#CinematicVideo',
-    '#AIVideoPrompt',
-    '#ContentCreator',
-  ];
-
-  // Full Video Master Prompt (First clip or unified)
+  // Full Video Master Prompt
   const fullMasterPrompt = clipsOutput.map((c) => `[Clip ${c.clip_number}: ${c.start_time}-${c.end_time}s]\n${c.master_prompt}`).join('\n\n');
   const negativePromptText = 'blurry, oversaturated, low quality, artifacts, watermark, logo, text overlay, distorted face, extra limbs, bad anatomy, jittery motion, flickering';
 
-  // Build Markdown representation
+  // Video Analysis & Viral DNA structured object
+  const videoAnalysisObj = {
+    visual_and_style: firstAnalysis.style || `${firstAnalysis.scene}, ${firstAnalysis.lighting}`,
+    audio_and_music: firstAnalysis.dna?.audio_dna?.music_vibe || firstAnalysis.dna?.audio_dna?.voice_over || 'Cinematic immersive audio with dynamic rhythm',
+    camera_and_framing: `${firstAnalysis.camera?.shot || 'Medium Shot'}, ${firstAnalysis.camera?.movement || 'Tracking'} on ${firstAnalysis.lens || '35mm lens'}`,
+    lighting_and_mood: firstAnalysis.lighting || 'Soft studio key light with cinematic rim fill',
+    composition: firstAnalysis.dna?.visual_dna?.composition || 'Balanced framing with intentional depth of field',
+    color_palette: firstAnalysis.color || 'Cinematic natural grading',
+  };
+
+  const viralDnaObj = {
+    hook_type: firstAnalysis.dna?.viral_dna?.hook_type || 'Visual Problem & Curiosity Hook',
+    hook_visual: firstAnalysis.dna?.viral_dna?.hook_visual || firstAnalysis.action || 'High-contrast opening motion',
+    hook_text: firstAnalysis.dna?.viral_dna?.hook_text || productOrSubject,
+    retention_trigger: firstAnalysis.dna?.viral_dna?.retention_trigger || 'Pacing cepat per 1-2 detik',
+    curiosity_gap: firstAnalysis.dna?.viral_dna?.curiosity_gap || 'Antisipasi hasil demonstrasi produk',
+    pacing: firstAnalysis.dna?.retention_tactics?.pacing || 'Dinamis berirama cepat',
+    emotional_curve: `${firstAnalysis.dna?.emotional_dna?.opening_emotion || 'Penasaran'} -> ${firstAnalysis.dna?.emotional_dna?.climax_emotion || 'Puas'} -> ${firstAnalysis.dna?.emotional_dna?.ending_emotion || 'Tertarik'}`,
+    structure: {
+      hook: firstAnalysis.dna?.content_structure?.hook || 'Detik 0-3: Visual memukau pemikat perhatian',
+      body: firstAnalysis.dna?.content_structure?.body || 'Detik 3+: Demonstrasi keunggulan produk',
+      climax: firstAnalysis.dna?.content_structure?.climax || 'Titik kepuasan visual maksimal',
+      cta: firstAnalysis.dna?.content_structure?.cta || 'Call to action alami penutup video',
+    },
+  };
+
+  // STEP 6: BUILD MARKDOWN REPRESENTATION (Strictly backward compatible with SplitPromptViewer)
   const markdownLines: string[] = [
-    `# 🎬 HASIL SPLIT PROMPT VIDEO`,
+    `# 🎬 HASIL AI CONTENT CLONE ENGINE`,
+    ``,
+    `## 🎬 ANALISIS VIDEO`,
+    `- **Visual & Gaya:** ${videoAnalysisObj.visual_and_style}`,
+    `- **Audio & Musik:** ${videoAnalysisObj.audio_and_music}`,
+    `- **Kamera & Lensa:** ${videoAnalysisObj.camera_and_framing}`,
+    `- **Lighting & Mood:** ${videoAnalysisObj.lighting_and_mood}`,
+    ``,
+    `## 🧬 VIRAL DNA & RETENTION ENGINE`,
+    `- **Tipe Hook:** ${viralDnaObj.hook_type}`,
+    `- **Visual Hook:** ${viralDnaObj.hook_visual}`,
+    `- **Retention Trigger:** ${viralDnaObj.retention_trigger}`,
+    `- **Pacing & Irama:** ${viralDnaObj.pacing}`,
+    `- **Emotional Curve:** ${viralDnaObj.emotional_curve}`,
     ``,
     `## 📋 CAPTION`,
     captionText,
@@ -193,6 +284,7 @@ export async function runVideoToPromptPipeline(
     `- Total Durasi: ${segmentation.metadata.duration}`,
     `- Jumlah Klip: ${segmentation.metadata.total_clip} Klip`,
     `- Pilihan Pecah: ${segmentation.metadata.split_duration}`,
+    `- Quality Score: ${qcEvaluation.qcResult.total_score}/100 (Pass: ${qcEvaluation.qcResult.passed ? 'YES' : 'NO'})`,
     ``,
     `## 📹 SEGMEN & BREAKDOWN DETAIL`,
   ];
@@ -233,8 +325,22 @@ export async function runVideoToPromptPipeline(
   const structuredDataComment = `\n\n<!-- STRUCTURED_DATA:\n${JSON.stringify({
     caption: captionText,
     hashtags: hashtagsList,
-    split_duration: typeof effectiveInput.segmentDuration === 'number' ? effectiveInput.segmentDuration : (parseInt(String(effectiveInput.segmentDuration), 10) || 10),
+    split_duration: splitDurationNum,
     metadata: segmentation.metadata,
+    videoAnalysis: {
+      visualAndStyle: videoAnalysisObj.visual_and_style,
+      audioAndMusic: videoAnalysisObj.audio_and_music,
+      cameraAndFraming: videoAnalysisObj.camera_and_framing,
+      lightingAndMood: videoAnalysisObj.lighting_and_mood,
+    },
+    video_analysis: videoAnalysisObj,
+    viral_dna: viralDnaObj,
+    seo: {
+      caption: captionText,
+      hashtags: hashtagsList,
+      keywords: [primaryKeyword, categoryKeyword],
+    },
+    quality_score: qcEvaluation.qcResult,
     clips: clipsOutput,
     segments: segmentsForUi,
     masterPrompt: fullMasterPrompt,
@@ -245,9 +351,25 @@ export async function runVideoToPromptPipeline(
   const durationMs = Date.now() - startTime;
 
   const output: VideoToPromptOutput = {
+    // New AI Content Clone Engine Schema
+    video_analysis: videoAnalysisObj,
+    viral_dna: viralDnaObj,
+    seo: {
+      caption: captionText,
+      hashtags: hashtagsList,
+      keywords: [primaryKeyword, categoryKeyword],
+    },
+    quality_score: {
+      total: qcEvaluation.qcResult.total_score,
+      passed: qcEvaluation.qcResult.passed,
+      breakdown: qcEvaluation.qcResult.breakdown,
+      issues: qcEvaluation.qcResult.issues,
+    },
+
+    // Standard & UI Fields
     caption: captionText,
     hashtags: hashtagsList,
-    split_duration: typeof effectiveInput.segmentDuration === 'number' ? effectiveInput.segmentDuration : (parseInt(String(effectiveInput.segmentDuration), 10) || 10),
+    split_duration: splitDurationNum,
     metadata: segmentation.metadata,
     clips: clipsOutput,
     segments: segmentsForUi,
@@ -255,9 +377,9 @@ export async function runVideoToPromptPipeline(
     negativePrompt: negativePromptText,
     markdown: finalMarkdown,
     validation: {
-      passed: true,
-      score: 100,
-      failures: [],
+      passed: qcEvaluation.qcResult.passed,
+      score: qcEvaluation.qcResult.total_score,
+      failures: qcEvaluation.qcResult.issues,
     },
     meta: {
       apiCallsUsed,
@@ -277,3 +399,4 @@ export async function runVideoToPromptPipeline(
 
   return output;
 }
+

@@ -90,6 +90,54 @@ export interface VideoAnalysisData {
   lightingAndMood?: string;
 }
 
+export interface ViralDnaData {
+  hook_type?: string;
+  hook_visual?: string;
+  hook_text?: string;
+  retention_trigger?: string;
+  curiosity_gap?: string;
+  pacing?: string;
+  emotional_curve?: string;
+  structure?: {
+    hook?: string;
+    body?: string;
+    climax?: string;
+    cta?: string;
+  };
+}
+
+export interface QualityScoreData {
+  total: number;
+  passed: boolean;
+  breakdown: {
+    product_consistency: number;
+    prompt_quality: number;
+    caption_match: number;
+    hashtag_validation: number;
+    scene_timing: number;
+    audio_visual_match: number;
+  };
+  issues: string[];
+}
+
+export function extractViralDna(rawText: string): ViralDnaData | null {
+  if (!rawText) return null;
+  const structured = extractStructuredData(rawText);
+  if (structured?.viral_dna) {
+    return structured.viral_dna;
+  }
+  return null;
+}
+
+export function extractQualityScore(rawText: string): QualityScoreData | null {
+  if (!rawText) return null;
+  const structured = extractStructuredData(rawText);
+  if (structured?.quality_score) {
+    return structured.quality_score;
+  }
+  return null;
+}
+
 export function extractStructuredData(rawText: string): any | null {
   if (!rawText) return null;
   const match = rawText.match(/<!--\s*STRUCTURED_DATA:\s*([\s\S]*?)\s*-->/);
@@ -530,6 +578,8 @@ export default function SplitPromptViewer({
   const masterPromptText = extractMasterPromptText(rawPrompt);
   const negativePromptText = extractNegativePromptText(rawPrompt);
   const technicalSummary = extractTechnicalSummaryData(rawPrompt);
+  const viralDna = extractViralDna(rawPrompt);
+  const qualityScore = extractQualityScore(rawPrompt);
 
   const displayCaption = seoInfo?.caption || sourceCaption || '';
   const hashtagChips = seoInfo?.tagsList && seoInfo.tagsList.length > 0 ? seoInfo.tagsList.slice(0, 5) : [];
@@ -635,7 +685,7 @@ export default function SplitPromptViewer({
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-[#5b50e5]" />
-            Hasil Analisis & Breakdown Video
+            AI Content Clone Engine
           </span>
           <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
             {segments.length} Segmen
@@ -686,6 +736,140 @@ export default function SplitPromptViewer({
       ) : (
         /* Structured Cards View */
         <div className="space-y-6">
+          {/* QUALITY CONTROL SCORE BANNER */}
+          {qualityScore && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-4 sm:p-5 rounded-2xl border ${
+                qualityScore.passed
+                  ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
+                  : 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+              } shadow-xs space-y-3`}
+            >
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                      qualityScore.passed ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                    }`}
+                  >
+                    {qualityScore.total}
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider">
+                      Quality Control Intelligence System
+                    </h4>
+                    <p className="text-[11px] opacity-80">
+                      {qualityScore.passed
+                        ? 'Output lolos uji relevansi 6 pilar standar AI Content Clone Engine (Skor ≥ 85).'
+                        : 'Output telah disesuaikan otomatis untuk memenuhi standar relevansi minimal.'}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${
+                    qualityScore.passed
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-amber-100 text-amber-800 border border-amber-200'
+                  }`}
+                >
+                  {qualityScore.passed ? 'QC PASSED (100%)' : 'AUTO-CORRECTED'}
+                </span>
+              </div>
+
+              {/* 6 Pilar Score Indicators */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1 text-[11px]">
+                <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-center">
+                  <span className="block text-slate-500 font-medium">Product Match</span>
+                  <span className="font-bold text-slate-800">{qualityScore.breakdown.product_consistency}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-center">
+                  <span className="block text-slate-500 font-medium">Prompt Quality</span>
+                  <span className="font-bold text-slate-800">{qualityScore.breakdown.prompt_quality}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-center">
+                  <span className="block text-slate-500 font-medium">Caption Match</span>
+                  <span className="font-bold text-slate-800">{qualityScore.breakdown.caption_match}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-center">
+                  <span className="block text-slate-500 font-medium">Hashtag Valid</span>
+                  <span className="font-bold text-slate-800">{qualityScore.breakdown.hashtag_validation}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-center">
+                  <span className="block text-slate-500 font-medium">Scene Timing</span>
+                  <span className="font-bold text-slate-800">{qualityScore.breakdown.scene_timing}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-center">
+                  <span className="block text-slate-500 font-medium">Audio Match</span>
+                  <span className="font-bold text-slate-800">{qualityScore.breakdown.audio_visual_match}%</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* VIRAL DNA CARD */}
+          {viralDna && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-4"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Sparkles className="w-4 h-4 text-[#5b50e5]" />
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Viral DNA & Retention Analysis
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                {viralDna.hook_type && (
+                  <div className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 space-y-1">
+                    <span className="font-bold text-indigo-950 block">🎯 Hook Type</span>
+                    <p className="text-slate-700 leading-relaxed">{viralDna.hook_type}</p>
+                  </div>
+                )}
+                {viralDna.retention_trigger && (
+                  <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 space-y-1">
+                    <span className="font-bold text-emerald-950 block">⚡ Retention Trigger</span>
+                    <p className="text-slate-700 leading-relaxed">{viralDna.retention_trigger}</p>
+                  </div>
+                )}
+                {viralDna.emotional_curve && (
+                  <div className="p-3 rounded-xl bg-amber-50/50 border border-amber-100 space-y-1">
+                    <span className="font-bold text-amber-950 block">📈 Emotional Curve</span>
+                    <p className="text-slate-700 leading-relaxed">{viralDna.emotional_curve}</p>
+                  </div>
+                )}
+              </div>
+
+              {viralDna.structure && (
+                <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-100 space-y-2 text-xs">
+                  <span className="font-bold text-slate-800 block">Alur Struktur Konten (Hook → Body → Climax → CTA)</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div className="p-2 rounded-lg bg-white border border-slate-200/70">
+                      <span className="font-bold text-indigo-600 block">Hook:</span>
+                      <p className="text-slate-600 mt-0.5">{viralDna.structure.hook}</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200/70">
+                      <span className="font-bold text-blue-600 block">Body:</span>
+                      <p className="text-slate-600 mt-0.5">{viralDna.structure.body}</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200/70">
+                      <span className="font-bold text-amber-600 block">Climax:</span>
+                      <p className="text-slate-600 mt-0.5">{viralDna.structure.climax}</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200/70">
+                      <span className="font-bold text-emerald-600 block">CTA:</span>
+                      <p className="text-slate-600 mt-0.5">{viralDna.structure.cta}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           {/* 1. ANALISIS VIDEO CARD */}
           {videoAnalysis && (
             <motion.div

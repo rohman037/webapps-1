@@ -47,6 +47,7 @@ import { useAccessGate } from '../../hooks/useAccessGate';
 import { useGenerationLog } from '../../hooks/useGenerationLog';
 import BatchPhotoPromptModal, { ClipSummaryItem } from '../modals/BatchPhotoPromptModal';
 import ViralReplicaOutputView from './ViralReplicaOutputView';
+import { ReplicaVideoResponse } from '@/src/types/viralReplicaContracts';
 
 interface ContentIdeasToolProps {
   initialVideoFile?: File | null;
@@ -300,8 +301,23 @@ export default function ContentIdeasTool({
   const [progressStep, setProgressStep] = useState<string>('Tahap 1: Menganalisis elemen visual asli video...');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [rawResult, setRawResult] = useState<string | null>(null);
+  const [structuredResult, setStructuredResult] = useState<ReplicaVideoResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeModelUsed, setActiveModelUsed] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem('cached_ideas_result');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.result) setRawResult(parsed.result);
+        if (parsed.structured) setStructuredResult(parsed.structured);
+        if (parsed.modelUsed) setActiveModelUsed(parsed.modelUsed);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   // Copy states
   const [copiedIdeaId, setCopiedIdeaId] = useState<number | null>(null);
@@ -647,15 +663,17 @@ export default function ContentIdeasTool({
       }
 
       const generatedResult = data.result || data.text;
-      if (!generatedResult) {
-        throw new Error('Hasil generasi ide konten kosong. Silakan coba lagi.');
+      const generatedStructured = data.structured || null;
+      if (!generatedResult && !generatedStructured) {
+        throw new Error('Hasil generasi replika video viral kosong. Silakan coba lagi.');
       }
 
       clearInterval(progressInterval);
       setProgressPercent(100);
-      setProgressStep('Selesai membuat ide konten grounded!');
+      setProgressStep('Selesai membuat replika video viral grounded!');
 
-      setRawResult(generatedResult);
+      setRawResult(generatedResult || JSON.stringify(generatedStructured, null, 2));
+      setStructuredResult(generatedStructured);
       setActiveModelUsed(data.modelUsed || 'Gemini Auto-Cascade');
 
       // Emit generation event to tracking pipeline
@@ -676,6 +694,7 @@ export default function ContentIdeasTool({
       try {
         sessionStorage.setItem('cached_ideas_result', JSON.stringify({
           result: data.result,
+          structured: data.structured,
           modelUsed: data.modelUsed || 'Gemini Auto-Cascade',
         }));
       } catch (err) {
@@ -1477,14 +1496,14 @@ export default function ContentIdeasTool({
           <EngagingLoadingState
             title="Menganalisis Video Viral & Merancang Replika Ide"
             subtitle={progressStep || 'Membedah komposisi video, audio pacing, visual hook, dan merancang ide replika...'}
-            badgeText="PIPELINE 2-TAHAP AI VIRAL"
+            badgeText="3-AGENT REPLICA PIPELINE"
             icon={Lightbulb}
             progress={progressPercent}
             steps={[
-              'Tahap 1: Vision Grounding & Analisis Visual Video',
-              'Tahap 2: Riset Tren & Query Search Intent',
-              `Tahap 3: Generator ${numIdeas} Ide Konten & Voice Over Natural`,
-              'Tahap 4: Finalisasi Prompt Klip Adegan Siap Pakai'
+              'Tahap 1: Vision Grounding & Ekstraksi DNA Video & Produk',
+              'Tahap 2: Adaptasi Konsep & Storyboard Naskah Adegan',
+              'Tahap 3: Master Prompt AI Video (Split Klip) & SEO Grounded',
+              'Tahap 4: Finalisasi Output & Siap Produksi'
             ]}
           />
         ) : rawResult ? (
@@ -1496,6 +1515,7 @@ export default function ContentIdeasTool({
             <ViralReplicaOutputView
               parsedIdeas={parsedIdeas}
               rawResult={rawResult}
+              structuredResult={structuredResult}
               targetAI={targetAI}
               segmentDuration={segmentDuration}
               maxDuration={Number(maxDuration) || 60}

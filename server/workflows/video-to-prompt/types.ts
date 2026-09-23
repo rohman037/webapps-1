@@ -49,11 +49,55 @@ export interface VideoClipOutput {
   clip_number: number;
   start_time: number;
   end_time: number;
+  duration_label?: string;
   master_prompt: string;
   scenes: ClipScene[];
 }
 
 export interface VideoToPromptOutput {
+  // AI CONTENT CLONE ENGINE - Standard Output Schema
+  video_analysis?: {
+    visual_and_style?: string;
+    audio_and_music?: string;
+    camera_and_framing?: string;
+    lighting_and_mood?: string;
+    composition?: string;
+    color_palette?: string;
+  };
+  viral_dna?: {
+    hook_type?: string;
+    hook_visual?: string;
+    hook_text?: string;
+    retention_trigger?: string;
+    curiosity_gap?: string;
+    pacing?: string;
+    emotional_curve?: string;
+    structure?: {
+      hook?: string;
+      body?: string;
+      climax?: string;
+      cta?: string;
+    };
+  };
+  seo?: {
+    caption: string;
+    hashtags: string[];
+    keywords: string[];
+  };
+  quality_score?: {
+    total: number;
+    passed: boolean;
+    breakdown: {
+      product_consistency: number;
+      prompt_quality: number;
+      caption_match: number;
+      hashtag_validation: number;
+      scene_timing: number;
+      audio_visual_match: number;
+    };
+    issues: string[];
+  };
+
   // Output Data Structure matching Specification
   caption?: string;
   hashtags?: string[];              // 5 buah

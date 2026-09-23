@@ -989,8 +989,13 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
             <div className="max-w-5xl mx-auto space-y-6">
               {/* Page Title */}
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Ekstrak Prompt dari Video</h1>
-                <p className="text-sm text-slate-500 mt-1">Ubah video menjadi prompt AI sinematik & pecah durasi per klip adegan.</p>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">AI Content Clone Engine</h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-[#5b50e5] border border-indigo-200">
+                    DNA & Prompt Clone
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500 mt-1">Bedah Video DNA, Scene Breakdown Presisi, dan rumuskan Master Prompt AI Sinematik dengan Quality Control Otomatis.</p>
               </div>
 
               {/* Controls Card */}

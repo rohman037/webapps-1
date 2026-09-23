@@ -3,9 +3,17 @@ import { logger } from '@/server/core/utils/logger';
 import { getAvailableApiKeys, resolveRawKey, handleKeyRateLimited, handleKeyDisabled, handleKeySuccess } from './apiKeyPool';
 import { getModelsForApiKeyAndTask } from './modelSelector';
 import { recordAiUsageLog } from '@/server/database/aiUsageLogs';
+import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 
 export interface AiTaskRequest {
-  taskType: 'video_analysis' | 'prompt_generation' | 'general';
+  taskType:
+    | 'viral_product_analysis'
+    | 'adaptation_script_generation'
+    | 'video_prompt_seo_generation'
+    | 'video_analysis'
+    | 'prompt_generation'
+    | 'general'
+    | string;
   contents: any;
   config?: any;
   preferredModel?: string;
@@ -38,7 +46,41 @@ function getGenAIClient(apiKey: string): GoogleGenAI {
  */
 export async function executeAiTask(req: AiTaskRequest): Promise<AiTaskResponse> {
   const startTime = Date.now();
-  const { taskType, contents, config = {}, preferredModel, customApiKey, timeoutMs = 60000 } = req;
+  const { taskType, contents, config = {}, preferredModel, customApiKey, clientAccessCode, timeoutMs = 60000 } = req;
+
+  // PRIORITY 1: Execute via the battle-tested LLM Gateway with instant fast-failover across all tiers and keys
+  try {
+    const gatewayRes = await callGeminiWithFallback(
+      preferredModel,
+      { contents, config },
+      customApiKey,
+      clientAccessCode,
+      'tier2',
+      `video_${taskType}`,
+      Boolean(preferredModel)
+    );
+
+    const latencyMs = gatewayRes.latencyMs || (Date.now() - startTime);
+
+    await recordAiUsageLog({
+      api_key_id: gatewayRes.keyMasked || 'llm_gateway_pool',
+      model_name: gatewayRes.modelUsed,
+      task_type: taskType,
+      status: 'success',
+      http_status: 200,
+      latency_ms: latencyMs,
+    });
+
+    return {
+      text: gatewayRes.text,
+      modelUsed: gatewayRes.modelUsed,
+      apiKeyIdUsed: gatewayRes.keyMasked || 'llm_gateway_pool',
+      latencyMs,
+      retries: 0,
+    };
+  } catch (gatewayErr: any) {
+    logger.warn(`[aiRouter] Gateway primary pass returned warning: ${gatewayErr?.message}. Falling back to internal direct pool...`);
+  }
 
   // If user provided custom API Key, try that first
   const keysToTry = await getAvailableApiKeys();

@@ -49,10 +49,11 @@ export function validateVideoInput(input: {
 
   // Format validation
   const allowedMimes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mkv', 'video/avi'];
-  if (mimeType && !mimeType.startsWith('video/') && !allowedMimes.includes(mimeType.toLowerCase())) {
+  const isText = mimeType && (mimeType.startsWith('text/') || mimeType === 'application/json');
+  if (mimeType && !mimeType.startsWith('video/') && !allowedMimes.includes(mimeType.toLowerCase()) && !isText) {
     return {
       valid: false,
-      error: `Format video "${mimeType}" tidak didukung. Harap gunakan format MP4, WebM, atau MOV.`,
+      error: `Format berkas "${mimeType}" tidak didukung. Harap gunakan format MP4, WebM, MOV, atau teks prompt.`,
     };
   }
 

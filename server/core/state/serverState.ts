@@ -32,6 +32,7 @@ export const promptResponseCache = new Map<string, {
   text: string;
   modelUsed: string;
   promptArchitect?: any;
+  structured?: any;
 }>();
 
 export const PROMPT_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 Hours

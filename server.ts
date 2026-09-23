@@ -30,6 +30,7 @@ import { apiKeysRouter } from './server/workflows/api-keys/routes';
 import { knowledgeRouter } from './server/workflows/knowledge/routes';
 import { eventsRouter } from './server/workflows/events/routes';
 import { videoToPromptRouter } from './server/workflows/video-to-prompt/routes';
+import { replicaVideoRouter } from './server/workflows/replica-video/routes';
 
 async function startServer() {
   const app = express();
@@ -133,7 +134,8 @@ async function startServer() {
         url.includes('/api/orchestrate') ||
         url.includes('/api/learn-feedback') ||
         url.includes('/api/tiktok/info') ||
-        url.includes('/api/tiktok-shop/info')
+        url.includes('/api/tiktok-shop/info') ||
+        url.includes('/api/replica-video')
       ) {
         return true;
       }
@@ -176,6 +178,7 @@ async function startServer() {
   app.use(promptSplitterRouter);
   app.use(photoPromptRouter);
   app.use(contentIdeasRouter);
+  app.use(replicaVideoRouter);
   app.use(tiktokShopIdeasRouter);
   app.use(tiktokRouter);
   app.use(knowledgeRouter);

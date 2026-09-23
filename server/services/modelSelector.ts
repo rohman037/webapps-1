@@ -1,26 +1,91 @@
 import { getAiModelsForTask } from '@/server/database/aiModels';
 import { logger } from '@/server/core/utils/logger';
 
-// Default model hierarchy per specifications
 export const TASK_MODEL_HIERARCHY: Record<string, string[]> = {
   video_analysis: [
     'gemini-3.8-flash',
     'gemini-3.7-flash',
     'gemini-3.6-flash',
-    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-flash-lite',
+  ],
+  photo_storyboard: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+  ],
+  photo_prompt: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-pro-preview',
     'gemini-3.5-flash-lite',
   ],
-  prompt_generation: [
+  content_generation: [
     'gemini-3.8-flash',
     'gemini-3.7-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+  ],
+  script_generation: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+  ],
+  viral_product_analysis: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+  ],
+  adaptation_script_generation: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+  ],
+  video_prompt_seo_generation: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+  ],
+  product_intelligence: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+  ],
+  reasoning: [
+    'gemini-3.1-pro-preview',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+  ],
+  simple_text: [
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
   ],
   general: [
     'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
     'gemini-3.7-flash',
     'gemini-3.6-flash',
+    'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
   ],
 };
@@ -30,7 +95,7 @@ export const TASK_MODEL_HIERARCHY: Record<string, string[]> = {
  */
 export async function getModelsForApiKeyAndTask(
   apiKeyId: string,
-  taskType: 'video_analysis' | 'prompt_generation' | 'general' = 'video_analysis'
+  taskType: string = 'general'
 ): Promise<string[]> {
   try {
     const configuredModels = await getAiModelsForTask(apiKeyId, taskType);
@@ -44,6 +109,5 @@ export async function getModelsForApiKeyAndTask(
     logger.warn(`[modelSelector] Could not load DB models for ${apiKeyId}:`, err);
   }
 
-  // Fallback to standard task hierarchy
-  return TASK_MODEL_HIERARCHY[taskType] || TASK_MODEL_HIERARCHY.video_analysis;
+  return TASK_MODEL_HIERARCHY[taskType] || TASK_MODEL_HIERARCHY.general;
 }
