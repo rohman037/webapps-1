@@ -5,6 +5,7 @@ import { analyzeUserGrowth } from '@/server/core/intelligence/agentUserGrowthAna
 import { optimizeCostAndTiers } from '@/server/core/intelligence/agentCostTierOptimizer';
 import { broadcastLiveEvent } from '@/server/core/state/serverState';
 import { logger } from '@/server/core/utils/logger';
+import { wrapCronJob } from '@/server/core/observability/sentry';
 
 let cronInitialized = false;
 
@@ -13,7 +14,7 @@ let cronInitialized = false;
  * that have passed their 30-day or custom validity period.
  */
 export async function runClientExpiryAndQuotaCleanup() {
-  try {
+  return wrapCronJob('client_expiry_cleanup', async () => {
     const clients = await dbGetClients();
     const now = Date.now();
     let hasChanges = false;
@@ -48,9 +49,7 @@ export async function runClientExpiryAndQuotaCleanup() {
       broadcastLiveEvent({ type: 'clients_updated', clients: await dbGetClients() });
       broadcastLiveEvent({ type: 'access_codes_updated', accessCodes: await dbGetAccessCodes() });
     }
-  } catch (err) {
-    logger.warn('[Auto-Expiry Cleaner] Error checking client expiration:', err);
-  }
+  });
 }
 
 export function initBackgroundSchedulers() {
@@ -69,30 +68,26 @@ export function initBackgroundSchedulers() {
 
   // 2. Hourly Cost & Model Tier Optimizer (At minute 0)
   cron.schedule('0 * * * *', async () => {
-    try {
+    await wrapCronJob('hourly_cost_tier_optimizer', async () => {
       const keysArr = await dbGetApiKeys();
       await optimizeCostAndTiers(keysArr);
-    } catch (e) {
-      logger.warn('[Cron Hourly Cost] Gagal menjalankan optimizer cost', e);
-    }
+    });
   });
 
   // 3. Daily User Growth Analyst Cron (00:00)
   cron.schedule('0 0 * * *', async () => {
     logger.info('[Server Cron 24/7] Running Daily User Growth Analyst...');
-    try {
+    await wrapCronJob('daily_user_growth_analyst', async () => {
       const clients = await dbGetClients();
       const transactions = await dbGetTransactions();
       await analyzeUserGrowth(clients, transactions);
-    } catch (e) {
-      logger.warn('[Cron Daily Growth] Gagal menjalankan growth analyst', e);
-    }
+    });
   });
 
   // 4. Daily Meta-Agent Auto-Factory Cron (00:05)
   cron.schedule('5 0 * * *', async () => {
     logger.info('[Server Cron 24/7] Running Daily Meta-Agent Auto-Factory...');
-    try {
+    await wrapCronJob('daily_meta_agent_factory', async () => {
       const clients = await dbGetClients();
       const transactions = await dbGetTransactions();
       const factoryResult = await runAutoAgentFactory(clients, transactions);
@@ -102,8 +97,6 @@ export function initBackgroundSchedulers() {
           growthState: await dbGetGrowthState(),
         });
       }
-    } catch (e) {
-      logger.warn('[Cron Daily Factory] Gagal menjalankan agent factory', e);
-    }
+    });
   });
 }

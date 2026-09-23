@@ -1,8 +1,12 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
-import ErrorBoundary from './components/common/ErrorBoundary.tsx';
+import SentryErrorBoundary from './observability/ErrorBoundary.tsx';
+import { initFrontendSentry } from './observability/sentry.ts';
 import './index.css';
+
+// Initialize Frontend Observability
+initFrontendSentry();
 
 // Graceful handler for harmless sandbox WebSocket / HMR disconnect logs
 if (typeof window !== 'undefined') {
@@ -29,9 +33,9 @@ if (typeof window !== 'undefined') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ErrorBoundary>
+    <SentryErrorBoundary>
       <App />
-    </ErrorBoundary>
+    </SentryErrorBoundary>
   </StrictMode>,
 );
 

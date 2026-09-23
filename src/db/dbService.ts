@@ -106,8 +106,13 @@ const recordDbError = (colName: string, op: string, error: any) => {
 };
 
 export const safeGet = async (colName: string): Promise<any[]> => {
+  const startTime = Date.now();
   try {
     const snap = await withTimeout(adminDb.collection(colName).get(), 4000);
+    const duration = Date.now() - startTime;
+    if (duration > 500) {
+      console.warn(`[Firestore Performance] Slow GET on '${colName}': ${duration}ms`);
+    }
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     
     // Update local cache
@@ -147,6 +152,7 @@ export const safeGetOne = async (colName: string, docId: string): Promise<any | 
 };
 
 export const safeSave = async (colName: string, item: any): Promise<any> => {
+  const startTime = Date.now();
   try {
     if (!item) return item;
     if (!item.id) item.id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
@@ -158,6 +164,10 @@ export const safeSave = async (colName: string, item: any): Promise<any> => {
 
     // Persist to Firestore with timeout
     await withTimeout(adminDb.collection(colName).doc(String(item.id)).set(item, { merge: true }), 4000);
+    const duration = Date.now() - startTime;
+    if (duration > 500) {
+      console.warn(`[Firestore Performance] Slow SAVE on '${colName}'/${item.id}: ${duration}ms`);
+    }
     return item;
   } catch (e: any) {
     recordDbError(colName, `SAVE/${item?.id}`, e);

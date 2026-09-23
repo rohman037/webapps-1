@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { Sentry } from '../core/observability/sentry';
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -17,6 +18,18 @@ export const errorMiddleware = (
   const code = err.code || 'INTERNAL_SERVER_ERROR';
 
   console.error(`[Error] ${req.method} ${req.url} - ${statusCode}:`, err);
+
+  if (statusCode >= 500) {
+    try {
+      Sentry.withScope((scope) => {
+        scope.setTag('http.method', req.method);
+        scope.setTag('http.path', req.path);
+        scope.setTag('http.status_code', String(statusCode));
+        scope.setExtra('error_code', code);
+        Sentry.captureException(err);
+      });
+    } catch {}
+  }
 
   res.status(statusCode).json({
     success: false,

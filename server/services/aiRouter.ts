@@ -4,6 +4,8 @@ import { getAvailableApiKeys, resolveRawKey, handleKeyRateLimited, handleKeyDisa
 import { getModelsForApiKeyAndTask } from './modelSelector';
 import { recordAiUsageLog } from '@/server/database/aiUsageLogs';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
+import { withLlmSpan } from '@/server/core/observability/tracing';
+import { captureLlmError } from '@/server/core/observability/sentry';
 
 export interface AiTaskRequest {
   taskType:
@@ -45,8 +47,18 @@ function getGenAIClient(apiKey: string): GoogleGenAI {
  * Execute AI Task with complete Multi-Key & Multi-Model Auto Fallback
  */
 export async function executeAiTask(req: AiTaskRequest): Promise<AiTaskResponse> {
-  const startTime = Date.now();
-  const { taskType, contents, config = {}, preferredModel, customApiKey, clientAccessCode, timeoutMs = 60000 } = req;
+  const rawPrompt = typeof req.contents === 'string' ? req.contents : JSON.stringify(req.contents || '');
+  return withLlmSpan(
+    `llm.${req.taskType || 'task'}`,
+    {
+      provider: 'google-gemini',
+      model: req.preferredModel || 'gemini-2.5-flash',
+      workflowName: `workflow_${req.taskType || 'general'}`,
+      rawPrompt,
+    },
+    async () => {
+      const startTime = Date.now();
+      const { taskType, contents, config = {}, preferredModel, customApiKey, clientAccessCode, timeoutMs = 60000 } = req;
 
   // PRIORITY 1: Execute via the battle-tested LLM Gateway with instant fast-failover across all tiers and keys
   try {
@@ -292,7 +304,20 @@ export async function executeAiTask(req: AiTaskRequest): Promise<AiTaskResponse>
 
   const elapsedMs = Date.now() - startTime;
   logger.error(`[aiRouter] All models across all API keys failed for task "${taskType}" after ${elapsedMs}ms`);
-  throw new Error(
+  
+  const finalError = new Error(
     `Semua model AI dan API Key di pool sedang sibuk atau mengalami kendala: ${lastError?.message || 'Gagal memproses request'}. Silakan coba beberapa saat lagi.`
+  );
+
+  captureLlmError(finalError, {
+    provider: 'google-gemini',
+    model: req.preferredModel || 'pool-fallback',
+    workflowName: `workflow_${req.taskType || 'general'}`,
+    promptHash: typeof req.contents === 'string' ? undefined : undefined,
+    status: 503,
+  });
+
+  throw finalError;
+    }
   );
 }

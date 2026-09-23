@@ -4,6 +4,8 @@ import path from 'path';
 import { logger } from './server/core/utils/logger';
 import { initDbSeed } from './src/db/dbService';
 import { errorMiddleware } from './server/middleware/error.middleware';
+import { initBackendSentry, Sentry } from './server/core/observability/sentry';
+import { initOpenTelemetry } from './server/core/observability/tracing';
 
 // Core State & Security Services
 import { loadBannedDevices, isDeviceOrIpBanned } from './server/core/security/deviceSecurity';
@@ -33,6 +35,10 @@ import { videoToPromptRouter } from './server/workflows/video-to-prompt/routes';
 import { replicaVideoRouter } from './server/workflows/replica-video/routes';
 
 async function startServer() {
+  // Initialize Core Observability (OpenTelemetry & Sentry)
+  initOpenTelemetry();
+  initBackendSentry();
+
   const app = express();
   const PORT = 3000;
 

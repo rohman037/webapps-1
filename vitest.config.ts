@@ -17,6 +17,8 @@ export default defineConfig({
         lines: 60,
       },
       include: [
+        'config/observability.ts',
+        'server/core/observability/**',
         'server/workflows/**/validators/**',
         'server/workflows/shared/**',
         'server/workflows/payment/service.ts',

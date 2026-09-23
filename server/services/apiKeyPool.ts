@@ -9,6 +9,7 @@
 
 import { dbGetApiKeys, dbSaveApiKeys, dbAddApiKeyLog } from '@/src/db/dbService';
 import { logger } from '@/server/core/utils/logger';
+import { recordKeyRotationBreadcrumb } from '@/server/core/observability/sentry';
 
 export interface AiApiKey {
   id: string;
@@ -213,6 +214,12 @@ export async function handleKeyRateLimited(keyId: string, cooldownMs = 150000) {
 
   logger.warn(`[apiKeyPool] Key ${keyId} placed in cooldown for ${cooldownMs / 1000}s due to 429 Rate Limit`);
 
+  recordKeyRotationBreadcrumb({
+    keyId,
+    reason: 'rate_limited',
+    details: `Placed in cooldown for ${cooldownMs / 1000}s due to 429 Rate Limit`,
+  });
+
   try {
     const keys = await dbGetApiKeys();
     const found = keys.find((k: any) => k.id === keyId || k.key === keyId);
@@ -236,6 +243,12 @@ export async function handleKeyDisabled(keyId: string, reason = '401 Unauthorize
   runtimeKeyStates.set(keyId, current);
 
   logger.error(`[apiKeyPool] Key ${keyId} disabled permanently: ${reason}`);
+
+  recordKeyRotationBreadcrumb({
+    keyId,
+    reason: 'revoked',
+    details: reason,
+  });
 
   try {
     const keys = await dbGetApiKeys();
