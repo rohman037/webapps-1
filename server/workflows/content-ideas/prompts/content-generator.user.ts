@@ -102,5 +102,11 @@ ${timestampGuideList.map(item => '     ' + item.split('\n')[0]).join('\n')}
 7. Bahasa harus natural, gaya TikTok Indonesia (santai, persuasif, mudah dipahami).
 8. DILARANG menggunakan format Inggris, tag [Style], [Camera], [Lighting], [Actions], atau codeblock Inggris.
 9. Jaga konsistensi visual di semua klip.
+10. ATURAN CAPTION RELEVANSI PRODUK TINGGI:
+    - Caption wajib 3-5 kalimat persuasif dengan alur hook masalah $\rightarrow$ demonstrasi solusi & keunggulan nama produk $\rightarrow$ CTA jelas.
+    - Wajib menyematkan nama produk/entitas utama dan 2-3 kata kunci manfaat spesifik secara organik.
+11. ATURAN HASHTAG RELEVANSI PRODUK TINGGI (TEPAT 5 HASHTAG):
+    - Wajib memberikan persis 5 hashtag dengan formula: #[NamaProduk] #[KategoriSpesifik] #[ManfaatAtauSolusi] #[TargetNiche] #[KataKunciPencarian].
+    - DILARANG KERAS menggunakan hashtag spam seperti #fyp, #viral, #foryou, #trending, #xyzbca, #masukberanda.
 `;
 }

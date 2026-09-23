@@ -42,9 +42,9 @@ export async function generateContent(input: ContentGeneratorInput): Promise<Con
 ${timestampTemplateText}
 - **AEO Caption SEO**:
 """text
-[Caption AEO: Kalimat 1 = BLUFF Answer + Entitas Utama, Kalimat 2-3 = Poin Detail Faktual, Penutup = Q&A Pemicu Diskusi]
+[Caption Storytelling & Konversi: Kalimat 1 = Hook pikat masalah/BLUFF answer + Entitas Produk/Topik Utama; Kalimat 2-3 = Poin detail manfaat nyata & keunggulan spesifik produk; Kalimat 4-5 = Call To Action (CTA) persuasif yang mengalir natural]
 """
-- **Hashtag Relevan**: '#HashtagSpesifikVisual1 #HashtagSpesifikVisual2 #HashtagDetail3 #HashtagNiche4 #HashtagTargetSEO5'`);
+- **Hashtag Relevan**: '#[NamaProduk/Topik] #[KategoriSpesifik] #[Manfaat/Solusi] #[NicheAudiens] #[TargetSEOKeyword]'`);
   }
   const allIdeasTemplate = ideaPromptTemplates.join('\n\n---\n\n');
 

@@ -84,20 +84,32 @@ export function cleanDataForFirestore<T extends Record<string, any>>(obj: T): T 
 }
 
 export function getClients(): ClientItem[] {
-  if (typeof localStorage === 'undefined') return DEFAULT_CLIENTS;
+  if (typeof localStorage === 'undefined') {
+    return DEFAULT_CLIENTS.map((c) => ({
+      ...c,
+      status: calculateClientStatus(c.expiryDate, c.status),
+    }));
+  }
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_CLIENTS_KEY);
-    if (!raw) {
+    let list = DEFAULT_CLIENTS;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        list = parsed;
+      }
+    } else {
       localStorage.setItem(LOCAL_STORAGE_CLIENTS_KEY, JSON.stringify(DEFAULT_CLIENTS));
-      return DEFAULT_CLIENTS;
     }
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
-    }
-    return DEFAULT_CLIENTS;
+    return list.map((c) => ({
+      ...c,
+      status: calculateClientStatus(c.expiryDate, c.status),
+    }));
   } catch (error) {
-    return DEFAULT_CLIENTS;
+    return DEFAULT_CLIENTS.map((c) => ({
+      ...c,
+      status: calculateClientStatus(c.expiryDate, c.status),
+    }));
   }
 }
 

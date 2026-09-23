@@ -1551,6 +1551,8 @@ export default function ContentIdeasTool({
                 photoStyle: opts.photoStyle,
                 targetGenerator: opts.targetGenerator,
                 negativePrompt: opts.negativePrompt,
+                subjectReference: opts.subjectReference,
+                productReference: opts.productReference,
               });
             }
             setIsBatchPhotoModalOpen(false);

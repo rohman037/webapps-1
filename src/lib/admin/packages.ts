@@ -1,7 +1,7 @@
 import { getUserSession } from '../auth';
-import { collection, doc, setDoc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
-import { db, auth } from '../firebase';
-
+import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase';
+import { adminFetch } from './adminApi';
 
 export interface PackageItem {
   id: string;
@@ -17,7 +17,7 @@ export interface PackageItem {
   updatedAt?: string;
 }
 
-const LOCAL_STORAGE_PACKAGES_KEY = 'satset_packages_data';
+export const LOCAL_STORAGE_PACKAGES_KEY = 'satset_packages_data';
 
 export const DEFAULT_PACKAGES: PackageItem[] = [
   {
@@ -96,6 +96,23 @@ export const DEFAULT_PACKAGES: PackageItem[] = [
   }
 ];
 
+function sanitizePackageForFirestore(pkg: PackageItem): Record<string, any> {
+  const clean: Record<string, any> = {
+    id: String(pkg.id || '').trim(),
+    name: String(pkg.name || '').trim(),
+    tagline: String(pkg.tagline || '').trim(),
+    price: Number(pkg.price) || 0,
+    durationDays: Number(pkg.durationDays) || 1,
+    features: Array.isArray(pkg.features) ? pkg.features.filter(Boolean) : [],
+    isPopular: Boolean(pkg.isPopular),
+    isActive: pkg.isActive !== false,
+    badgeLabel: String(pkg.badgeLabel || '').trim(),
+    targetCategory: pkg.targetCategory === 'member' ? 'member' : 'public',
+    updatedAt: pkg.updatedAt || new Date().toISOString(),
+  };
+  return clean;
+}
+
 export function getPackages(): PackageItem[] {
   if (typeof localStorage === 'undefined') {
     return DEFAULT_PACKAGES;
@@ -118,7 +135,7 @@ export function getPackages(): PackageItem[] {
       }
     }
   } catch (e) {
-    // console.warn('[Packages Lib] Error reading localStorage packages:', e);
+    console.warn('[Packages Lib] Error reading localStorage packages:', e);
   }
 
   try {
@@ -128,10 +145,57 @@ export function getPackages(): PackageItem[] {
   return DEFAULT_PACKAGES;
 }
 
-export async function savePackagesAsync(packages: PackageItem[], retries = 3): Promise<{ success: boolean; error?: string }> {
+export async function syncPackagesAsync(): Promise<{ success: boolean; packages: PackageItem[] }> {
+  let loadedPkgs: PackageItem[] = [];
+
+  // 1. Fetch from Firestore if available
+  if (db) {
+    try {
+      const snapshot = await getDocs(collection(db, 'packages'));
+      if (!snapshot.empty) {
+        loadedPkgs = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as PackageItem));
+      }
+    } catch (fsErr) {
+      console.warn('[Packages] Firestore sync read warning:', fsErr);
+    }
+  }
+
+  // 2. Fetch from Backend API if Firestore was empty or failed
+  if (loadedPkgs.length === 0) {
+    try {
+      const res = await adminFetch<PackageItem[]>('/api/packages');
+      if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        loadedPkgs = res.data;
+      }
+    } catch (apiErr) {
+      console.warn('[Packages] Backend fetch warning:', apiErr);
+    }
+  }
+
+  // 3. Fallback to LocalStorage or Default Seed
+  if (loadedPkgs.length === 0) {
+    const cached = getPackages();
+    loadedPkgs = cached.length > 0 ? cached : DEFAULT_PACKAGES;
+  }
+
+  // Save to localStorage & fire notification
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LOCAL_STORAGE_PACKAGES_KEY, JSON.stringify(loadedPkgs));
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('satset_packages_updated'));
+  }
+
+  return { success: true, packages: loadedPkgs };
+}
+
+export async function savePackagesAsync(packages: PackageItem[]): Promise<{ success: boolean; error?: string }> {
+  const sanitizedList = packages.map(p => sanitizePackageForFirestore(p) as PackageItem);
+
+  // 1. Update localStorage immediately for responsive UI
   try {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_PACKAGES_KEY, JSON.stringify(packages));
+      localStorage.setItem(LOCAL_STORAGE_PACKAGES_KEY, JSON.stringify(sanitizedList));
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('satset_packages_updated'));
@@ -140,24 +204,56 @@ export async function savePackagesAsync(packages: PackageItem[], retries = 3): P
     console.warn('[Packages Lib] Error saving to localStorage:', e);
   }
 
+  // 2. Sync to Backend API
   try {
-    const batch = writeBatch(db);
-    packages.forEach(pkg => {
-      const docRef = doc(db, 'packages', pkg.id);
-      batch.set(docRef, pkg);
+    await adminFetch('/api/admin/packages', {
+      method: 'POST',
+      body: JSON.stringify(sanitizedList),
     });
-    // Also we might want to delete removed packages, but simple batch set is enough for now 
-    // to sync the current packages (or the frontend just overrides whatever is there).
-    await batch.commit();
-    return { success: true };
-  } catch (err: any) {
-    console.warn('[savePackagesAsync] Error saving to Firestore:', err);
-    return { success: false, error: err.message || 'Gagal menyimpan ke Firestore' };
+  } catch (apiErr) {
+    console.warn('[savePackagesAsync] Backend API sync warning:', apiErr);
   }
+
+  // 3. Sync to Firestore Batch
+  if (db) {
+    try {
+      const batch = writeBatch(db);
+      sanitizedList.forEach(pkg => {
+        const docRef = doc(db, 'packages', pkg.id);
+        batch.set(docRef, pkg, { merge: true });
+      });
+      await batch.commit();
+    } catch (err: any) {
+      console.warn('[savePackagesAsync] Error committing to Firestore:', err);
+    }
+  }
+
+  return { success: true };
 }
 
 export function savePackages(packages: PackageItem[]): void {
   savePackagesAsync(packages);
+}
+
+export async function savePackageAsync(pkg: PackageItem): Promise<{ success: boolean; packages: PackageItem[]; error?: string }> {
+  const current = getPackages();
+  const index = current.findIndex((p) => p.id === pkg.id);
+  let updated: PackageItem[];
+
+  const cleanItem: PackageItem = {
+    ...pkg,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (index >= 0) {
+    updated = [...current];
+    updated[index] = cleanItem;
+  } else {
+    updated = [...current, cleanItem];
+  }
+
+  await savePackagesAsync(updated);
+  return { success: true, packages: updated };
 }
 
 export function savePackage(pkg: PackageItem): PackageItem[] {
@@ -172,15 +268,44 @@ export function savePackage(pkg: PackageItem): PackageItem[] {
     updated = [...current, { ...pkg, updatedAt: new Date().toISOString() }];
   }
 
-  savePackages(updated);
+  savePackagesAsync(updated);
   return updated;
+}
+
+export async function deletePackageAsync(id: string): Promise<{ success: boolean; packages: PackageItem[] }> {
+  const current = getPackages();
+  const filtered = current.filter((p) => p.id !== id);
+
+  // Direct delete from Firestore
+  if (db && id) {
+    try {
+      await deleteDoc(doc(db, 'packages', id));
+    } catch (fsErr) {
+      console.warn('[deletePackageAsync] Firestore deleteDoc warning:', fsErr);
+    }
+  }
+
+  await savePackagesAsync(filtered);
+  return { success: true, packages: filtered };
 }
 
 export function deletePackage(id: string): PackageItem[] {
   const current = getPackages();
   const filtered = current.filter((p) => p.id !== id);
-  savePackages(filtered);
+  deletePackageAsync(id);
   return filtered;
+}
+
+export async function togglePackageActiveAsync(id: string): Promise<{ success: boolean; packages: PackageItem[] }> {
+  const current = getPackages();
+  const updated = current.map((p) => {
+    if (p.id === id) {
+      return { ...p, isActive: !p.isActive, updatedAt: new Date().toISOString() };
+    }
+    return p;
+  });
+  await savePackagesAsync(updated);
+  return { success: true, packages: updated };
 }
 
 export function togglePackageActive(id: string): PackageItem[] {
@@ -191,10 +316,14 @@ export function togglePackageActive(id: string): PackageItem[] {
     }
     return p;
   });
-  savePackages(updated);
+  savePackagesAsync(updated);
   return updated;
 }
 
+export async function resetDefaultPackagesAsync(): Promise<{ success: boolean; packages: PackageItem[] }> {
+  await savePackagesAsync(DEFAULT_PACKAGES);
+  return { success: true, packages: DEFAULT_PACKAGES };
+}
 
 let unsubscribePackages: (() => void) | null = null;
 
@@ -206,8 +335,8 @@ export function subscribeToPackages() {
     const packagesRef = collection(db, 'packages');
     unsubscribePackages = onSnapshot(packagesRef, (snapshot) => {
       const pkgs: PackageItem[] = [];
-      snapshot.forEach(doc => {
-        pkgs.push(doc.data() as PackageItem);
+      snapshot.forEach(docSnap => {
+        pkgs.push({ id: docSnap.id, ...docSnap.data() } as PackageItem);
       });
       
       if (pkgs.length > 0) {
@@ -217,8 +346,6 @@ export function subscribeToPackages() {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('satset_packages_updated'));
         }
-      } else {
-        // If empty, initialize with default?
       }
     }, (error) => {
       console.warn('[Packages] Firestore subscription error:', error);
@@ -228,7 +355,10 @@ export function subscribeToPackages() {
   }
 }
 
-// Ensure it's called
+// Ensure subscription is activated in browser environment
 if (typeof window !== 'undefined') {
-  setTimeout(() => subscribeToPackages(), 2000);
+  setTimeout(() => {
+    subscribeToPackages();
+    syncPackagesAsync();
+  }, 1000);
 }

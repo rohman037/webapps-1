@@ -210,19 +210,41 @@ export async function executeAiTask(req: AiTaskRequest): Promise<AiTaskResponse>
           totalRetries++;
           lastError = err;
           const errMsg = err?.message || String(err);
-          const statusCode = err?.status || err?.statusCode || (errMsg.includes('429') ? 429 : errMsg.includes('401') ? 401 : errMsg.includes('500') ? 500 : 500);
+          const rawStatus = (err as any)?.status || (err as any)?.statusCode;
 
-          logger.warn(`[aiRouter] Error with ${targetModel} on Key ${currentKeyObj.id}: ${errMsg} (Status: ${statusCode})`);
+          // BUG FIX 6: Detailed and distinct error classification rather than blindly defaulting to 500
+          let statusCode: number | 'UNKNOWN' = 'UNKNOWN';
+          if (typeof rawStatus === 'number') {
+            statusCode = rawStatus;
+          } else if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('limit: 0')) {
+            statusCode = 429;
+          } else if (errMsg.includes('401') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('UNAUTHENTICATED')) {
+            statusCode = 401;
+          } else if (errMsg.includes('403') || errMsg.includes('PERMISSION_DENIED')) {
+            statusCode = 403;
+          } else if (errMsg.includes('404') || errMsg.includes('NOT_FOUND') || errMsg.includes('not found')) {
+            statusCode = 404;
+          } else if (errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('overloaded')) {
+            statusCode = 503;
+          } else if (errMsg.includes('500') || errMsg.includes('Internal error')) {
+            statusCode = 500;
+          }
 
-          // 401 Unauthorized -> Disable API Key permanently and break to next key
-          if (statusCode === 401 || errMsg.includes('API_KEY_INVALID') || errMsg.includes('401')) {
+          // Full, non-obfuscated diagnostic logging for post-mortem analysis
+          logger.warn(
+            `[aiRouter] Error with model ${targetModel} on Key ${currentKeyObj.id} (Status: ${statusCode}): "${errMsg}". Full error:`,
+            err
+          );
+
+          // 401/403 Unauthorized -> Disable API Key permanently and break to next key
+          if (statusCode === 401 || statusCode === 403 || errMsg.includes('API_KEY_INVALID') || errMsg.includes('PERMISSION_DENIED')) {
             await handleKeyDisabled(currentKeyObj.id, errMsg);
             await recordAiUsageLog({
               api_key_id: currentKeyObj.id,
               model_name: targetModel,
               task_type: taskType,
               status: 'error',
-              http_status: 401,
+              http_status: typeof statusCode === 'number' ? statusCode : 401,
               error_message: errMsg,
             });
             break; // Skip rest of models on this invalid key
@@ -247,7 +269,7 @@ export async function executeAiTask(req: AiTaskRequest): Promise<AiTaskResponse>
           }
 
           // 500 / 503 Internal Error -> Wait briefly with jitter on attempt 1, then switch model on attempt 2
-          if (attempt === 1 && (statusCode === 500 || statusCode === 503 || errMsg.includes('500') || errMsg.includes('503'))) {
+          if (attempt === 1 && (statusCode === 500 || statusCode === 503)) {
             logger.info(`[aiRouter] Retrying ${targetModel} once after brief backoff...`);
             await new Promise((r) => setTimeout(r, 600 + Math.random() * 400));
             continue;
@@ -259,7 +281,7 @@ export async function executeAiTask(req: AiTaskRequest): Promise<AiTaskResponse>
             model_name: targetModel,
             task_type: taskType,
             status: 'error',
-            http_status: statusCode,
+            http_status: typeof statusCode === 'number' ? statusCode : 0,
             error_message: errMsg,
           });
           break; // Switch to next model in sequence

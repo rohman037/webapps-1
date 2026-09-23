@@ -1,3 +1,12 @@
+/**
+ * @deprecated
+ * DEPRECATED: This module managed the separate Firestore collection "ai_api_keys".
+ * To fix BUG 1 (Dual Key Pools), all key management is now unified in the "apiKeys"
+ * collection managed by dbService (dbGetApiKeys / dbSaveApiKeys) and server/workflows/api-keys/service.ts.
+ * 
+ * Please do not write new logic that queries the "ai_api_keys" collection.
+ */
+
 import { safeGet, safeGetOne, safeSave, safeDelete } from '@/src/db/dbService';
 import { logger } from '@/server/core/utils/logger';
 

@@ -42,9 +42,28 @@ export async function updatePackagesService(packagesList: any[]) {
   if (!Array.isArray(packagesList)) {
     throw new Error('Payload paket harus berupa array');
   }
-  for (const item of packagesList) {
-    await dbSavePackage(item);
+
+  // Retrieve existing packages to identify deleted packages
+  try {
+    const existing = await dbGetPackages();
+    if (Array.isArray(existing)) {
+      const newIds = new Set(packagesList.map((p: any) => p.id).filter(Boolean));
+      for (const oldPkg of existing) {
+        if (oldPkg?.id && !newIds.has(oldPkg.id)) {
+          await dbDeletePackage(oldPkg.id);
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('[updatePackagesService] Failed to clean up removed packages:', err);
   }
+
+  for (const item of packagesList) {
+    if (item && item.id) {
+      await dbSavePackage(item);
+    }
+  }
+
   broadcastLiveEvent({ type: 'packages_updated', packages: packagesList });
   return packagesList;
 }
@@ -347,25 +366,31 @@ export async function verifyAccessCodeService(data: {
         name: displayName,
         email: adminEmail,
         code: adminCode,
+        serverTimestamp: Date.now(),
+        serverTimeIso: new Date().toISOString(),
       },
     };
   }
 
-  // 3. REGISTERED CLIENT LOGIN (HASH-AWARE)
+  // 3. REGISTERED CLIENT LOGIN (HASH-AWARE & STRICT EXPIRY CHECK)
   const candidateHash = hashCredential(cleaned);
   const clients = await dbGetClients();
   const client = clients.find(
     (c) =>
       (c.accessCodeHash && c.accessCodeHash === candidateHash) ||
-      (c.accessCode && c.accessCode.toUpperCase() === cleaned)
+      (c.accessCode && c.accessCode.trim().toUpperCase() === cleaned)
   );
 
   if (client) {
     const now = Date.now();
-    const expiry = client.expiryDate ? new Date(client.expiryDate).getTime() : now + 86400000;
+    const expiry = client.expiryDate ? new Date(client.expiryDate).getTime() : 0;
     let calculatedStatus = client.status || 'active';
+    
+    // Check if 30-day or custom duration has passed
     if (calculatedStatus !== 'suspended') {
-      if (expiry - now <= 0) calculatedStatus = 'expired';
+      if (expiry > 0 && expiry <= now) {
+        calculatedStatus = 'expired';
+      }
     }
 
     if (calculatedStatus === 'suspended') {
@@ -394,11 +419,18 @@ export async function verifyAccessCodeService(data: {
     }
 
     if (calculatedStatus === 'expired') {
+      // Auto-update client status to expired in database and revoke code
+      client.status = 'expired';
+      await dbSaveClient(client);
+      if (client.accessCode) {
+        await dbDeleteAccessCode(client.accessCode);
+      }
+
       const logItem: AuditLogItem = {
         id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         adminName: `${client.name || 'Klien Satset'} (${cleaned})`,
-        action: 'Login Ditolak (Kadaluarsa)',
-        details: `Akses ditolak karena masa aktif telah kedaluwarsa (${new Date(client.expiryDate).toLocaleDateString('id-ID')}) • IP: ${ip}`,
+        action: 'Login Ditolak (Masa Aktif Habis)',
+        details: `Akses ditolak karena durasi aktif (30 hari / paket) telah kedaluwarsa (${client.expiryDate ? new Date(client.expiryDate).toLocaleDateString('id-ID') : 'Expired'}). Kode otomatis dinonaktifkan • IP: ${ip}`,
         timestamp: new Date().toISOString(),
         category: 'client',
       };
@@ -406,14 +438,16 @@ export async function verifyAccessCodeService(data: {
       try {
         const currentLogs = await dbGetAuditLogs();
         broadcastLiveEvent({ type: 'audit_log_event', log: logItem, auditLogs: currentLogs });
-        broadcastLiveEvent({ type: 'audit_logs_updated' } as any);
+        broadcastLiveEvent({ type: 'clients_updated', clients: await dbGetClients() });
+        broadcastLiveEvent({ type: 'access_codes_updated', accessCodes: await dbGetAccessCodes() });
       } catch (e) {}
 
       return {
         status: 200,
         body: {
           success: false,
-          error: 'Masa aktif kode akses telah kedaluwarsa. Silakan perpanjang paket Anda.',
+          isExpired: true,
+          error: `Masa aktif kode akses Anda (${client.packageName || 'Paket'} - 30 Hari) telah habis/kedaluwarsa. Akun otomatis dinonaktifkan. Silakan hubungi admin untuk perpanjang masa aktif.`,
         },
       };
     }
@@ -438,7 +472,7 @@ export async function verifyAccessCodeService(data: {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       adminName: `${client.name || 'Klien Satset'} (${cleaned})`,
       action: 'Login Berhasil',
-      details: `Login pengguna sukses • Paket: ${client.packageName || client.packageId || 'VIP'} • IP: ${ip} • Masa Aktif: ${new Date(client.expiryDate).toLocaleDateString('id-ID')}`,
+      details: `Login pengguna sukses • Paket: ${client.packageName || client.packageId || 'VIP'} • IP: ${ip} • Masa Aktif Hingga: ${client.expiryDate ? new Date(client.expiryDate).toLocaleDateString('id-ID') : 'Lifetime'}`,
       timestamp: new Date().toISOString(),
       category: 'client',
     };
@@ -457,19 +491,40 @@ export async function verifyAccessCodeService(data: {
         code: client.accessCode,
         name: client.name || 'Klien Satset',
         email: client.email || '',
+        expiryDate: client.expiryDate,
+        serverTimestamp: Date.now(),
+        serverTimeIso: new Date().toISOString(),
       },
     };
   }
 
-  // 4. ACCESS CODE POOL LOGIN (HASH-AWARE)
+  // 4. ACCESS CODE POOL LOGIN (WITH STRICT CLIENT LINK & EXPIRATION AUDIT)
   const accessCodes = await dbGetAccessCodes();
   const matchedCode = accessCodes.find(
     (item) =>
       (item.accessCodeHash && item.accessCodeHash === candidateHash) ||
-      (item.code && item.code.toUpperCase() === cleaned)
+      (item.code && item.code.trim().toUpperCase() === cleaned)
   );
 
   if (matchedCode) {
+    // Cross-check with clients table: If this code belongs to an expired client, reject!
+    const linkedClient = clients.find(c => c.accessCode && c.accessCode.trim().toUpperCase() === cleaned);
+    if (linkedClient) {
+      const now = Date.now();
+      const expiry = linkedClient.expiryDate ? new Date(linkedClient.expiryDate).getTime() : 0;
+      if (linkedClient.status === 'expired' || (expiry > 0 && expiry <= now)) {
+        await dbDeleteAccessCode(matchedCode.code);
+        return {
+          status: 200,
+          body: {
+            success: false,
+            isExpired: true,
+            error: 'Masa aktif kode akses Anda telah habis. Akun otomatis dinonaktifkan. Silakan perpanjang paket Anda.',
+          },
+        };
+      }
+    }
+
     failedLoginTracker.delete(trackerKey);
 
     recordUserPresence({
@@ -502,6 +557,8 @@ export async function verifyAccessCodeService(data: {
         role: 'user',
         code: matchedCode.code,
         name: matchedCode.note || 'Klien Satset',
+        serverTimestamp: Date.now(),
+        serverTimeIso: new Date().toISOString(),
       },
     };
   }

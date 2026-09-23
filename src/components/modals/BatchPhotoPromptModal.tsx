@@ -16,11 +16,15 @@ export interface BatchPhotoPromptModalProps {
   conceptTitle: string;
   clips: ClipSummaryItem[];
   referenceImage?: File | null;
+  initialSubjectReference?: string;
+  initialProductReference?: string;
   onConfirm: (options: {
     aspectRatio: string;
     photoStyle: string;
     targetGenerator: string;
     negativePrompt?: string;
+    subjectReference?: string;
+    productReference?: string;
   }) => void;
 }
 
@@ -54,11 +58,15 @@ export default function BatchPhotoPromptModal({
   conceptTitle,
   clips,
   referenceImage,
+  initialSubjectReference,
+  initialProductReference,
   onConfirm,
 }: BatchPhotoPromptModalProps) {
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>('--ar 9:16');
   const [selectedStyle, setSelectedStyle] = useState<string>('commercial');
   const [selectedGenerator, setSelectedGenerator] = useState<string>('nanobananapro');
+  const [subjectReference, setSubjectReference] = useState<string>(initialSubjectReference || '');
+  const [productReference, setProductReference] = useState<string>(initialProductReference || '');
   const [negativePrompt, setNegativePrompt] = useState<string>('');
 
   if (!isOpen) return null;
@@ -71,6 +79,8 @@ export default function BatchPhotoPromptModal({
       photoStyle: selectedStyle,
       targetGenerator: selectedGenerator,
       negativePrompt: negativePrompt.trim() || undefined,
+      subjectReference: subjectReference.trim() || undefined,
+      productReference: productReference.trim() || undefined,
     });
   };
 
@@ -235,6 +245,46 @@ export default function BatchPhotoPromptModal({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Step 4: Reference Anchors (Anti-Flicker & Zero-Morphing Lock) */}
+            <div className="space-y-3 p-3.5 rounded-2xl bg-indigo-50/50 border border-indigo-100">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> 4. Reference Anchors (Kunci Karakter & Produk)
+                </label>
+                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full">
+                  Anti-Flicker
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-800">
+                    👤 Subject / Talent Reference:
+                  </label>
+                  <input
+                    type="text"
+                    value={subjectReference}
+                    onChange={(e) => setSubjectReference(e.target.value)}
+                    placeholder="Contoh: Wanita 24th, rambut hitam wavy sebahu, kemeja putih"
+                    className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-800">
+                    📦 Product Reference:
+                  </label>
+                  <input
+                    type="text"
+                    value={productReference}
+                    onChange={(e) => setProductReference(e.target.value)}
+                    placeholder="Contoh: Botol serum frosted glass 30ml tutup putih doff"
+                    className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                  />
+                </div>
               </div>
             </div>
 

@@ -22,6 +22,15 @@ import {
   updateClientsService,
 } from './service';
 
+export async function getServerTimeController(req: Request, res: Response) {
+  const now = Date.now();
+  return res.json({
+    success: true,
+    serverTimestamp: now,
+    serverTimeIso: new Date(now).toISOString(),
+  });
+}
+
 // Packages
 export async function getPackagesController(req: Request, res: Response) {
   try {

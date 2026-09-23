@@ -54,6 +54,8 @@ export async function generatePhotoPromptController(req: Request, res: Response)
     const {
       mimeType,
       base64Data,
+      subjectReference,
+      productReference,
       model,
       targetGenerator = 'nanobananapro',
       photoStyle = 'commercial',
@@ -75,6 +77,8 @@ export async function generatePhotoPromptController(req: Request, res: Response)
     const output = await generatePhotoPromptService({
       mimeType,
       base64Data,
+      subjectReference: typeof subjectReference === 'string' ? subjectReference.trim() : undefined,
+      productReference: typeof productReference === 'string' ? productReference.trim() : undefined,
       model,
       targetGenerator,
       photoStyle,

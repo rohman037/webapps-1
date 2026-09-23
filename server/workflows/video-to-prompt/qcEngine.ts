@@ -1,6 +1,12 @@
 import { logger } from '@/server/core/utils/logger';
 import { VideoClipOutput } from './types';
 import { VideoAnalyzerOutput } from '@/server/agents/videoAnalyzerAgent';
+import {
+  cleanSubjectTitle,
+  cleanInlineHashtagsFromSentence,
+  generateProductRelevantHashtags,
+  BANNED_SPAM_TAGS,
+} from '@/server/core/utils/sanitizer';
 
 export interface VideoToPromptQcResult {
   passed: boolean;
@@ -15,14 +21,6 @@ export interface VideoToPromptQcResult {
   };
   issues: string[];
 }
-
-const BANNED_GENERIC_HASHTAGS = new Set([
-  '#fyp', '#fypシ', '#fypviral', '#foryou', '#foryoupage', '#foru',
-  '#viral', '#viralvideo', '#viraltiktok', '#trend', '#trending', '#trendingvideo',
-  '#xyzbca', '#masukberanda', '#beranda', '#tiktok', '#tik_tok', '#tiktokshop',
-  '#explore', '#explorepage', '#reels', '#indonesia', '#like', '#follow',
-  '#videoviral', '#trendingtopic', '#fypppppppppppppp'
-]);
 
 export class VideoToPromptQcEngine {
   /**
@@ -52,9 +50,11 @@ export class VideoToPromptQcEngine {
     const { productOrSubject, clips, caption, hashtags, analysisList, splitDuration } = params;
     const issues: string[] = [];
 
+    const cleanTitle = cleanSubjectTitle(productOrSubject);
+
     // --- CHECK 1: Product Consistency ---
     let productScore = 100;
-    const subjectWords = productOrSubject
+    const subjectWords = cleanTitle
       .toLowerCase()
       .split(/[\s,._-]+/)
       .filter((w) => w.length > 2);
@@ -62,9 +62,9 @@ export class VideoToPromptQcEngine {
     const allPrompts = clips.map((c) => c.master_prompt.toLowerCase()).join(' ');
     const hasSubjectMention = subjectWords.length === 0 || subjectWords.some((w) => allPrompts.includes(w));
 
-    if (!hasSubjectMention && productOrSubject.trim().length > 0) {
+    if (!hasSubjectMention && cleanTitle.trim().length > 0) {
       productScore -= 25;
-      issues.push(`Product Consistency: Subjek/produk "${productOrSubject}" tidak terrefleksi secara eksplisit di master prompt.`);
+      issues.push(`Product Consistency: Subjek/produk "${cleanTitle}" tidak terrefleksi secara eksplisit di master prompt.`);
     }
 
     // --- CHECK 2: Prompt Quality (Structure, Lens, Lighting, Motion, Style) ---
@@ -86,15 +86,17 @@ export class VideoToPromptQcEngine {
 
     // --- CHECK 3: Caption Match ---
     let captionScore = 100;
-    if (!caption || caption.length < 40) {
+    let correctedCaption = cleanInlineHashtagsFromSentence(caption || '').trim();
+
+    if (!correctedCaption || correctedCaption.length < 40) {
       captionScore -= 30;
       issues.push('Caption Match: Caption terlalu pendek atau belum teroptimasi untuk engagement media sosial.');
     }
-    const captionLower = (caption || '').toLowerCase();
+    const captionLower = correctedCaption.toLowerCase();
     const hasCaptionRelevance = subjectWords.length === 0 || subjectWords.some((w) => captionLower.includes(w));
-    if (!hasCaptionRelevance && productOrSubject.trim().length > 0) {
+    if (!hasCaptionRelevance && cleanTitle.trim().length > 0) {
       captionScore -= 20;
-      issues.push(`Caption Match: Caption tidak menyebutkan konteks/subjek utama "${productOrSubject}".`);
+      issues.push(`Caption Match: Caption tidak menyebutkan konteks/subjek utama "${cleanTitle}".`);
     }
 
     // --- CHECK 4: Hashtag Validation ---
@@ -102,12 +104,12 @@ export class VideoToPromptQcEngine {
     let validatedTags = [...hashtags];
 
     // Filter generic hashtags
-    const genericFound = validatedTags.filter((t) => BANNED_GENERIC_HASHTAGS.has(t.toLowerCase()));
+    const genericFound = validatedTags.filter((t) => BANNED_SPAM_TAGS.has(t.replace(/^#/, '').toLowerCase()));
     if (genericFound.length > 0) {
       hashtagScore -= genericFound.length * 10;
       issues.push(`Hashtag Validation: Ditemukan hashtag generik dilarang (${genericFound.join(', ')}).`);
       // Auto-correct: strip generic tags
-      validatedTags = validatedTags.filter((t) => !BANNED_GENERIC_HASHTAGS.has(t.toLowerCase()));
+      validatedTags = validatedTags.filter((t) => !BANNED_SPAM_TAGS.has(t.replace(/^#/, '').toLowerCase()));
     }
 
     // Ensure tags start with #
@@ -115,20 +117,10 @@ export class VideoToPromptQcEngine {
 
     // If less than 5 tags after filtering, synthesize relevant niche tags
     if (validatedTags.length < 5) {
-      const baseClean = productOrSubject.replace(/[^\w\s]/gi, '').trim().split(/\s+/)[0] || 'Content';
-      const cleanSubjectTag = `#${baseClean.charAt(0).toUpperCase() + baseClean.slice(1).toLowerCase()}`;
-      const replacements = [
-        cleanSubjectTag,
-        `#Review${baseClean}`,
-        `#Rekomendasi${baseClean}`,
-        `#Racun${baseClean}`,
-        `#Spill${baseClean}`,
-        '#AIVideoContent',
-        '#CinematicCreator',
-      ];
-      for (const rep of replacements) {
-        if (!validatedTags.some((t) => t.toLowerCase() === rep.toLowerCase())) {
-          validatedTags.push(rep);
+      const generated = generateProductRelevantHashtags(cleanTitle);
+      for (const genTag of generated) {
+        if (!validatedTags.some((t) => t.toLowerCase() === genTag.toLowerCase())) {
+          validatedTags.push(genTag);
         }
         if (validatedTags.length >= 5) break;
       }
@@ -187,11 +179,12 @@ export class VideoToPromptQcEngine {
       };
     });
 
-    // Auto-correct caption if missing subject
-    let correctedCaption = caption;
-    if (productOrSubject.trim().length > 0 && !hasCaptionRelevance) {
-      correctedCaption = `${productOrSubject} — ${caption}`;
+    // Auto-correct caption if missing subject (use cleanTitle, clean text without #)
+    if (cleanTitle.trim().length > 0 && !hasCaptionRelevance) {
+      correctedCaption = `${cleanTitle} — ${correctedCaption}`;
     }
+
+    correctedCaption = cleanInlineHashtagsFromSentence(correctedCaption);
 
     return {
       qcResult: {

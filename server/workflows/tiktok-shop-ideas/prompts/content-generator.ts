@@ -178,8 +178,10 @@ Subteks: "[teks overlay singkat]"
   - *Audio / Sound*: [SFX dan Foley suara nyata - TANPA BGM]
   - *Visual Style*: [Pencahayaan, lokasi, prop visual, pacing video]
 - **Draft Caption TikTok Shop**:
-  [Draft caption persuasif dengan emosi dan klaim produk]
-- **Hashtag Relevan**: #Hashtag1 #Hashtag2 #Hashtag3 #Hashtag4 #Hashtag5
+  [Draft caption persuasif 3-5 kalimat berkonversi tinggi: Kalimat 1 = Hook masalah/keinginan konsumen yang memikat; Kalimat 2-3 = Sebutkan Nama Produk secara eksplisit, keunggulan formula/fitur/USP terverifikasi; Kalimat 4 = Social proof / urgensi stok; Kalimat 5 = Call To Action (CTA) jelas mengajak klik keranjang kuning / cek promo hari ini]
+- **Hashtag Relevan**: #[NamaProdukSpesifik] #[KategoriProduk] #[SolusiAtauManfaat] #[TargetNicheAudiens] #[KataKunciPencarianBelanja]
+
+(CATATAN HASHTAG: Wajib persis 5 hashtag dengan 100% RELEVANSI PRODUK TINGGI. DILARANG KERAS memakai hashtag generik/spam seperti #fyp, #viral, #foryou, #trending, #xyzbca, #masukberanda!)
 
 (Jika total ide lebih dari 1, buatkan juga ### 💡 IDE 2 dst dengan format yang sama)`;
 
@@ -211,7 +213,9 @@ Do not omit labels. Do not merge into one paragraph without labels.
 5. Primary keyword MUST appear in the first 3 seconds of voice over.
 6. Do NOT invent product claims not present in the provided product data.
 7. Language: Bahasa Indonesia natural gaya TikTok.
-8. No English bracket tags like [Style], [Camera], [Lighting].`;
+8. No English bracket tags like [Style], [Camera], [Lighting].
+9. High Product Relevance Captions: Craft 3-5 sentence persuasive selling copy explicitly mentioning the product name, verified USP/formula benefits, pain points solved, and clear basket checkout CTA.
+10. High Product Relevance Hashtags: Generate exactly 5 ultra-relevant hashtags (1 Product Name, 2 Category/Niche, 1 Problem/Benefit, 1 Buying Intent). NEVER output generic spam hashtags like #fyp, #viral, #foryou, #trending, #xyzbca, #masukberanda.`;
 
   return { finalPrompt, systemInstruction };
 }

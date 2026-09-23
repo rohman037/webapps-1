@@ -5,6 +5,11 @@ import { fetchTikTokVideoInfo } from '@/server/core/tiktok-fetcher/service';
 import { validateVideoInput, processVideoSegmentation } from '@/server/services/videoProcessor';
 import { runVideoAnalyzerAgent, VideoAnalyzerOutput } from '@/server/agents/videoAnalyzerAgent';
 import { runPromptGenerationAgent } from '@/server/agents/promptGenerationAgent';
+import {
+  cleanSubjectTitle,
+  cleanInlineHashtagsFromSentence,
+  generateProductRelevantHashtags,
+} from '@/server/core/utils/sanitizer';
 import { VideoToPromptQcEngine } from './qcEngine';
 import type { VideoToPromptInput, VideoToPromptOutput, VideoClipOutput, Segment, MicroClip } from './types';
 
@@ -163,29 +168,21 @@ export async function runVideoToPromptPipeline(
 
   // STEP 4: SYNTHESIZE VIDEO DNA, VIRAL DNA & SEO
   const firstAnalysis = analysisList[0] || {} as VideoAnalyzerOutput;
-  const productOrSubject = effectiveInput.sourceTitle || firstAnalysis.subject || 'Produk Unggulan';
+  const rawSubject = effectiveInput.sourceTitle || firstAnalysis.subject || 'Produk Unggulan';
+  const cleanProductName = cleanSubjectTitle(rawSubject);
 
-  // Extract core keywords
-  const subjectWords = productOrSubject
-    .replace(/[^\w\s]/gi, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2);
+  // Generate 5 High-relevance Hashtags (0% generic spam)
+  let hashtagsList = generateProductRelevantHashtags(
+    cleanProductName,
+    firstAnalysis.environment || firstAnalysis.scene,
+    firstAnalysis.action
+  );
 
-  const primaryKeyword = subjectWords.slice(0, 2).join(' ') || 'Produk Viral';
-  const categoryKeyword = firstAnalysis.environment || 'Kategori Home Living';
-
-  // High-relevance 5 Hashtags:
-  // 30% Product-specific (2) + 30% Category (1) + 20% Audience (1) + 20% Search Intent (1)
-  const productTag1 = `#${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Produk'}${subjectWords[1] ? subjectWords[1].charAt(0).toUpperCase() + subjectWords[1].slice(1).toLowerCase() : 'Viral'}`;
-  const productTag2 = `#Review${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Produk'}`;
-  const categoryTag = `#Rekomendasi${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Belanja'}`;
-  const audienceTag = `#Racun${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'TikTok'}`;
-  const intentTag = `#Spill${subjectWords[0] ? subjectWords[0].charAt(0).toUpperCase() + subjectWords[0].slice(1).toLowerCase() : 'Barang'}`;
-
-  let hashtagsList = [productTag1, productTag2, categoryTag, audienceTag, intentTag];
-
-  // Natural high-converting SEO Caption with Hook, Value Proposition & CTA
-  let captionText = `Pernah kepikiran nggak kalau ${productOrSubject} bisa sefungsional dan semulus ini? 🔥 Visual sinematik detail memperlihatkan keunggulan nyata tanpa rekayasa. Pas banget buat kamu yang cari kualitas terbaik dan kepuasan maksimal. Cek selengkapnya sekarang sebelum kehabisan!`;
+  // Natural high-converting SEO Caption with Hook, Value Proposition & CTA (without awkward inline hashtags in sentences)
+  const visualDetail = firstAnalysis.action || firstAnalysis.subject || 'desain dan fungsi unggulannya';
+  let captionText = cleanInlineHashtagsFromSentence(
+    `Pernah kepikiran kalau ${cleanProductName} bisa sebagus dan sefungsional ini? 🔥 Visual sinematik detail memperlihatkan keunggulan nyata pada ${visualDetail} tanpa rekayasa. Pas banget buat kamu yang cari kualitas terbaik dan kepuasan maksimal. Cek selengkapnya sekarang sebelum kehabisan!`
+  );
 
   // STEP 5: QUALITY CONTROL INTELLIGENCE SYSTEM
   // Evaluates 6 checks: Product Consistency, Prompt Quality, Caption Match, Hashtag Validation, Scene Timing, Audio-Visual Match
@@ -194,7 +191,7 @@ export async function runVideoToPromptPipeline(
     : (parseInt(String(effectiveInput.segmentDuration), 10) || 10);
 
   const qcEvaluation = VideoToPromptQcEngine.evaluate({
-    productOrSubject,
+    productOrSubject: cleanProductName,
     clips: clipsOutput,
     caption: captionText,
     hashtags: hashtagsList,

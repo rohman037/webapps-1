@@ -3,6 +3,7 @@ import { requireAuth } from '@/server/middleware/auth.middleware';
 import { requireAdminRole } from '@/server/middleware/role.middleware';
 import { authRateLimiter, adminActionRateLimiter } from '@/server/middleware/rateLimit.middleware';
 import {
+  getServerTimeController,
   getPackagesController,
   updatePackagesController,
   getAccessCodesController,
@@ -27,6 +28,9 @@ import {
 } from './controller';
 
 export const accessControlRouter = Router();
+
+// Server-Authoritative Clock Synchronization Endpoint
+accessControlRouter.get('/api/server-time', getServerTimeController);
 
 // Packages (Public read, Admin write)
 accessControlRouter.get('/api/packages', getPackagesController);

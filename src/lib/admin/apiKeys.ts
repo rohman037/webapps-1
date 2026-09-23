@@ -8,7 +8,7 @@ export interface ApiKeyItem {
   dailyUsage: number;
   monthlyLimit: number;
   monthlyUsage: number;
-  status: 'active' | 'expired' | 'revoked';
+  status: 'active' | 'expired' | 'revoked' | 'rate_limited';
   expiryDate?: string;
   createdAt: string;
   lastUsedAt?: string;

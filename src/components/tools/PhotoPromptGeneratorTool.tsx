@@ -30,6 +30,8 @@ interface PhotoPromptGeneratorToolProps {
   initialConcept?: string;
   initialNegativePrompt?: string;
   initialReferenceImage?: File | null;
+  initialSubjectReference?: string;
+  initialProductReference?: string;
   autoGenerate?: boolean;
   initialAspectRatio?: string;
   initialPhotoStyle?: string;
@@ -154,6 +156,8 @@ export default function PhotoPromptGeneratorTool({
   initialConcept,
   initialNegativePrompt,
   initialReferenceImage,
+  initialSubjectReference,
+  initialProductReference,
   autoGenerate,
   initialAspectRatio,
   initialPhotoStyle,
@@ -164,6 +168,8 @@ export default function PhotoPromptGeneratorTool({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [textInput, setTextInput] = useState<string>('');
   const [negativeTextInput, setNegativeTextInput] = useState<string>('');
+  const [subjectReference, setSubjectReference] = useState<string>(initialSubjectReference || '');
+  const [productReference, setProductReference] = useState<string>(initialProductReference || '');
 
   // Configuration options
   const [targetGenerator, setTargetGenerator] = useState<string>(initialTargetGenerator || 'nanobananapro');
@@ -200,6 +206,14 @@ export default function PhotoPromptGeneratorTool({
       setNegativeTextInput(initialNegativePrompt.trim());
     }
 
+    if (initialSubjectReference && initialSubjectReference.trim()) {
+      setSubjectReference(initialSubjectReference.trim());
+    }
+
+    if (initialProductReference && initialProductReference.trim()) {
+      setProductReference(initialProductReference.trim());
+    }
+
     if (initialReferenceImage) {
       setImageFile(initialReferenceImage);
       setImagePreviewUrl(URL.createObjectURL(initialReferenceImage));
@@ -224,11 +238,13 @@ export default function PhotoPromptGeneratorTool({
           initialReferenceImage,
           initialAspectRatio,
           initialPhotoStyle,
-          initialTargetGenerator
+          initialTargetGenerator,
+          initialSubjectReference,
+          initialProductReference
         );
       }, 200);
     }
-  }, [initialConcept, initialNegativePrompt, initialReferenceImage, autoGenerate, initialAspectRatio, initialPhotoStyle, initialTargetGenerator]);
+  }, [initialConcept, initialNegativePrompt, initialReferenceImage, initialSubjectReference, initialProductReference, autoGenerate, initialAspectRatio, initialPhotoStyle, initialTargetGenerator]);
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -251,7 +267,9 @@ export default function PhotoPromptGeneratorTool({
     overrideRefImg?: File | null,
     overrideAr?: string,
     overrideStyle?: string,
-    overrideGen?: string
+    overrideGen?: string,
+    overrideSubjRef?: string,
+    overrideProdRef?: string
   ) => {
     setIsGenerating(true);
     setError(null);
@@ -261,6 +279,8 @@ export default function PhotoPromptGeneratorTool({
     const effectiveAr = overrideAr || aspectRatio;
     const effectiveStyle = overrideStyle || photoStyle;
     const effectiveGen = overrideGen || targetGenerator;
+    const effectiveSubj = overrideSubjRef !== undefined ? overrideSubjRef : subjectReference;
+    const effectiveProd = overrideProdRef !== undefined ? overrideProdRef : productReference;
 
     const titleName = targetText.slice(0, 40) + '...';
     reportActiveGenerationStatus(activeId, 'generating', `Prompt Foto Multi-Klip (${effectiveGen})`);
@@ -290,6 +310,8 @@ export default function PhotoPromptGeneratorTool({
         body: JSON.stringify({
           mimeType,
           base64Data,
+          subjectReference: effectiveSubj.trim() || undefined,
+          productReference: effectiveProd.trim() || undefined,
           model: 'auto',
           targetGenerator: effectiveGen,
           photoStyle: effectiveStyle,
@@ -489,6 +511,60 @@ ${c.prompt}
               </button>
             </div>
           )}
+        </div>
+
+        {/* Reference Anchors (Anti-Flicker & Zero-Morphing Lock) */}
+        <div className="pt-2 border-t border-slate-100 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> Reference Anchors (Kunci Konsistensi Karakter & Produk)
+            </span>
+            <span className="text-[11px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+              Anti-Flicker Engine
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {/* Subject Reference */}
+            <div className="space-y-1.5 p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80 hover:border-indigo-200 transition-colors">
+              <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  👤 Subject Reference (Karakter/Talent)
+                </span>
+                <span className="text-[10px] text-slate-600 font-normal">Opsional</span>
+              </label>
+              <textarea
+                value={subjectReference}
+                onChange={(e) => setSubjectReference(e.target.value)}
+                placeholder="Contoh: Wanita Indonesia 24th, kulit cerah warm undertone, rambut hitam sebahu bergelombang, kemeja linen putih santai"
+                rows={2}
+                className="w-full p-2.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 leading-relaxed resize-none"
+              />
+              <p className="text-[11px] text-slate-600 leading-tight">
+                Mengunci biometrik wajah & busana subjek di semua foto agar tidak berganti rupa.
+              </p>
+            </div>
+
+            {/* Product Reference */}
+            <div className="space-y-1.5 p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80 hover:border-indigo-200 transition-colors">
+              <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  📦 Product Reference (Bentuk/Bahan)
+                </span>
+                <span className="text-[10px] text-slate-600 font-normal">Opsional</span>
+              </label>
+              <textarea
+                value={productReference}
+                onChange={(e) => setProductReference(e.target.value)}
+                placeholder="Contoh: Botol pump serum 30ml kaca buram (frosted glass), tutup putih doff, cairan amber bening, label minimalis"
+                rows={2}
+                className="w-full p-2.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 leading-relaxed resize-none"
+              />
+              <p className="text-[11px] text-slate-600 leading-tight">
+                Mengunci bentuk fisik, material finishing, dan warna produk di semua foto.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Target Aspect Ratio */}

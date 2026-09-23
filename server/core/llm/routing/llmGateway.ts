@@ -129,7 +129,8 @@ function maskApiKey(key: string): string {
  */
 export class LLMGateway {
   private static instance: LLMGateway;
-  private static unavailableModelsSet = new Set<string>();
+  // BUG FIX 2: Scoped unavailable models per-key with auto-expiring TTL (replaces permanent global Set)
+  private static unavailableModelsMap = new Map<string /* `${keyId}::${model}` */, number /* expireTimestamp */>();
   // Global cooldown for models experiencing Google-wide 503 High Demand spikes
   private static globalModelCooldownMap = new Map<string, number>();
   private keyHealthMap = new Map<string, KeyHealthState>();
@@ -406,50 +407,69 @@ export class LLMGateway {
       }
     }
 
-    // 3. Admin Database Multi-Key Pool (TOP PRIORITY: Always loads keys configured & polled in Admin Dashboard)
+    // 3. Admin Database Multi-Key Pool (TOP PRIORITY: Always loads all keys configured in Admin Dashboard)
     try {
       const adminKeys = await dbGetApiKeys();
-      const activeAdminKeys = adminKeys.filter(
-        (k: any) =>
-          k.status === 'active' &&
-          isRealApiKey(k.key) &&
-          (!k.accessCode || k.accessCode === 'SYSTEM' || k.accessCode === 'GLOBAL' || k.accessCode === 'ADMIN_POOL')
-      );
+      const activeAdminKeys = adminKeys.filter((k: any) => {
+        const raw = (k.key || k.api_key || k.encrypted_key || '').trim();
+        const isNotRevoked = k.status !== 'revoked' && k.status !== 'disabled';
+        return isNotRevoked && isRealApiKey(raw);
+      });
 
       for (const k of activeAdminKeys) {
-        const rawKey = k.key.trim();
-        const isPolled = Boolean(k.verifiedByAdmin || k.lastPolledAt || k.pollStatus === 'active');
+        const rawKey = (k.key || k.api_key || k.encrypted_key || '').trim();
+        const isPolled = Boolean(k.verifiedByAdmin || k.lastPolledAt || k.pollStatus === 'active' || k.status === 'active');
+        const keyId = k.id || `admin_key_${maskApiKey(rawKey)}`;
         poolCandidates.push({
           key: rawKey,
-          keyId: k.id || `admin_key_${maskApiKey(rawKey)}`,
+          keyId,
           source: 'admin_pool',
         });
 
         // Register or sync state in health map
         const existing = this.keyHealthMap.get(rawKey);
+        const healthScoreVal = typeof k.health_score === 'number' ? k.health_score : (typeof k.healthScore === 'number' ? k.healthScore : 100);
+        const latencyVal = k.average_latency || k.latency_average || k.lastTestedLatency || k.latencyMs || 200;
+        const dbCooldown = k.cooldown_until || k.cooldownUntil || 0;
+        const dbStatus = k.status;
+
+        // BUG FIX 5: Multi-instance state synchronization.
+        // TODO: For production scaling across multiple cluster nodes / container instances,
+        // distributed key health state and cooldown timestamps should be stored in a shared distributed
+        // store like Redis / Firestore Realtime PubSub. For now, we actively re-sync with latest DB records.
         if (!existing) {
           this.keyHealthMap.set(rawKey, {
-            keyId: k.id || `admin_key_${maskApiKey(rawKey)}`,
+            keyId,
             keyMasked: maskApiKey(rawKey),
             key: rawKey,
-            status: k.status === 'active' ? 'active' : 'revoked',
+            status: dbStatus === 'revoked' || dbStatus === 'disabled' ? 'revoked' : (dbCooldown > now || dbStatus === 'rate_limited' ? 'rate_limited' : 'active'),
             activeRequests: 0,
-            totalRequests: 0,
-            totalErrors: 0,
+            totalRequests: k.total_requests || k.usage_count || k.totalRequests || 0,
+            totalErrors: k.failed_requests || k.error_count || k.totalErrors || 0,
             consecutiveErrors: 0,
-            lastUsedAt: 0,
-            cooldownUntil: k.cooldownUntil || 0,
-            averageLatencyMs: k.lastTestedLatency || k.latencyMs || 200,
+            lastUsedAt: k.last_used ? new Date(k.last_used).getTime() : 0,
+            cooldownUntil: dbCooldown,
+            averageLatencyMs: latencyVal,
             source: 'admin_pool',
             verifiedByAdmin: isPolled,
             lastPolledAt: k.lastPolledAt ? new Date(k.lastPolledAt).getTime() : (isPolled ? Date.now() : 0),
             lastTestedModel: k.lastTestedModel || 'gemini-3.8-flash',
           });
         } else {
-          if (isPolled) {
-            existing.verifiedByAdmin = true;
-            existing.source = 'admin_pool';
-            if (k.lastTestedLatency) existing.averageLatencyMs = k.lastTestedLatency;
+          existing.source = 'admin_pool';
+          if (isPolled) existing.verifiedByAdmin = true;
+          if (k.lastTestedLatency || k.average_latency) existing.averageLatencyMs = latencyVal;
+
+          // Re-sync cooldownUntil and status from DB to keep multi-instance state in sync
+          if (dbCooldown > existing.cooldownUntil) {
+            existing.cooldownUntil = dbCooldown;
+          }
+          if (dbStatus === 'revoked' || dbStatus === 'disabled') {
+            existing.status = 'revoked';
+          } else if (dbCooldown > now || dbStatus === 'rate_limited') {
+            existing.status = 'rate_limited';
+          } else if (existing.status === 'rate_limited' && dbCooldown <= now && existing.cooldownUntil <= now) {
+            existing.status = 'active';
           }
         }
       }
@@ -503,8 +523,25 @@ export class LLMGateway {
       }
     }
 
-    // Weighted Load Balancing Sort for Pool Candidates:
-    // ALWAYS prioritize keys verified/polled active by admin in the Admin Dashboard!
+    // Dynamic Intelligent Key Score Calculation for Load Balancing
+    const calculateScore = (candKey: string) => {
+      const state = this.keyHealthMap.get(candKey);
+      if (!state) return 50;
+      if (state.status === 'revoked') return -1000;
+      if (state.cooldownUntil && state.cooldownUntil > now) return -500;
+
+      const baseHealth = Math.max(10, 100 - (state.consecutiveErrors * 30));
+      const polledBonus = state.verifiedByAdmin ? 25 : 0;
+      const srcBonus = state.source === 'admin_pool' ? 20 : 5;
+      const latencyScore = Math.max(0, 20 - ((state.averageLatencyMs || 200) / 100));
+      const loadBalanceScore = Math.max(0, 15 - Math.min(15, (state.totalRequests || 0) / 100));
+      const activePenalty = (state.activeRequests || 0) * 40;
+      const errorPenalty = (state.consecutiveErrors || 0) * 35;
+
+      return (baseHealth * 0.35) + polledBonus + srcBonus + latencyScore + loadBalanceScore - activePenalty - errorPenalty;
+    };
+
+    // Sort Pool Candidates by Intelligent Score
     const sortedPool = uniquePoolCandidates
       .filter((c) => {
         const state = this.keyHealthMap.get(c.key);
@@ -514,32 +551,9 @@ export class LLMGateway {
         return true;
       })
       .sort((a, b) => {
-        const stateA = this.keyHealthMap.get(a.key);
-        const stateB = this.keyHealthMap.get(b.key);
-        if (!stateA || !stateB) return 0;
-
-        // 1. Admin-Polled Keys ALWAYS prioritized first!
-        const polledA = stateA.verifiedByAdmin ? 1 : 0;
-        const polledB = stateB.verifiedByAdmin ? 1 : 0;
-        if (polledA !== polledB) {
-          return polledB - polledA; // Polled keys come first
-        }
-
-        // 2. Admin pool source over system env
-        const sourceRank = (s: string) => (s === 'admin_pool' ? 2 : (s === 'user_custom' ? 1 : 0));
-        const srcDiff = sourceRank(stateB.source) - sourceRank(stateA.source);
-        if (srcDiff !== 0) return srcDiff;
-
-        // 3. Least active connections (Least-Connection load balancing)
-        const loadDiff = (stateA.activeRequests - stateB.activeRequests) * 100;
-        if (loadDiff !== 0) return loadDiff;
-
-        // 4. Consecutive errors penalty
-        const errorDiff = (stateA.consecutiveErrors - stateB.consecutiveErrors) * 50;
-        if (errorDiff !== 0) return errorDiff;
-
-        // 5. Lowest verified latency
-        return stateA.averageLatencyMs - stateB.averageLatencyMs;
+        const scoreA = calculateScore(a.key);
+        const scoreB = calculateScore(b.key);
+        return scoreB - scoreA;
       });
 
     // If user provided custom keys, prioritize them, followed by sorted pool keys as seamless fallbacks!
@@ -569,11 +583,11 @@ export class LLMGateway {
       });
   }
 
-  private recoverCooldownKeys() {
+  private async recoverCooldownKeys() {
     const now = Date.now();
     let recoveredCount = 0;
 
-    // 1. Recover keys
+    // 1. Recover keys in runtime
     for (const [key, state] of this.keyHealthMap.entries()) {
       if (state.status === 'cooldown' || state.status === 'rate_limited') {
         if (state.cooldownUntil && state.cooldownUntil <= now) {
@@ -593,7 +607,33 @@ export class LLMGateway {
       }
     }
 
+    // 3. Clean expired unavailable models entries (BUG 2)
+    for (const [km, exp] of LLMGateway.unavailableModelsMap.entries()) {
+      if (exp <= now) {
+        LLMGateway.unavailableModelsMap.delete(km);
+      }
+    }
+
     if (recoveredCount > 0) {
+      // BUG FIX 4: Ensure DB status is also updated from 'rate_limited' back to 'active'
+      try {
+        const dbKeys = await dbGetApiKeys();
+        let changed = false;
+        for (const k of dbKeys) {
+          if (k.status === 'rate_limited' && k.cooldownUntil && k.cooldownUntil <= now) {
+            k.status = 'active';
+            k.cooldownUntil = 0;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await dbSaveApiKeys(dbKeys);
+          this.emitEvent({ type: 'apikeys_updated', keys: dbKeys });
+        }
+      } catch (e) {
+        logger.warn('[LLM Gateway Cooldown Lift DB Sync]', e);
+      }
+
       this.emitEvent({ type: 'llm_gateway_pool_updated', metrics: this.getMetrics() });
     }
   }
@@ -686,8 +726,8 @@ export class LLMGateway {
 
     // Generous Request-Level Budgeting (120s) to allow traversing candidate keys
     const MAX_TOTAL_EXECUTION_TIME_MS = 120000;
-    // For single-request mode: exactly 1 key evaluation, no key hopping!
-    const MAX_KEY_HOPS_PER_REQUEST = isSingleRequestMode ? 1 : Math.min(6, keyCandidates.length);
+    // For single-request mode: exactly 1 key evaluation; for general mode: traverse up to 30 healthy keys in pool
+    const MAX_KEY_HOPS_PER_REQUEST = isSingleRequestMode ? 1 : Math.min(30, keyCandidates.length);
     const evaluatedKeyCandidates = keyCandidates.slice(0, MAX_KEY_HOPS_PER_REQUEST);
 
     keyCandidateLoop: for (let kIdx = 0; kIdx < evaluatedKeyCandidates.length; kIdx++) {
@@ -734,11 +774,24 @@ export class LLMGateway {
 
       const aiInstance = this.getGenAIClient(activeKey);
       let anyModelSucceededOnKey = false;
-      let allModelsRateLimitedOnKey = true;
+      let rateLimitEncounteredOnKey = false;
       let consecutiveFailuresOnKey = 0;
+      let consecutiveRateLimitsOnKey = 0;
 
-      // Filter out permanently unavailable/404 models
-      const currentModelsToTry = candidateModels.filter(m => !LLMGateway.unavailableModelsSet.has(m));
+      // BUG FIX 2 & 3: Filter out models that are temporarily unavailable (404) for this specific key
+      const currentModelsToTry = candidateModels.filter((m) => {
+        const unavailUntil = LLMGateway.unavailableModelsMap.get(`${keyId}::${m}`);
+        return !unavailUntil || unavailUntil <= Date.now();
+      });
+
+      // BUG FIX 3: Explicit check if candidate models list is empty for this key.
+      // Do NOT treat as rate-limited, skip circuit breaker and hop to next key cleanly.
+      if (currentModelsToTry.length === 0) {
+        logger.warn(
+          `[LLM Gateway] no_available_models_for_key: Key ${keyMasked} tidak memiliki model aktif yang siap dicoba saat ini. Melanjutkan ke key berikutnya tanpa rate limit circuit breaker.`
+        );
+        continue keyCandidateLoop;
+      }
 
       modelLoop: for (const targetModel of currentModelsToTry) {
         if ((keyState.status as string) === 'revoked') {
@@ -954,14 +1007,14 @@ export class LLMGateway {
             }
 
             if (isNotFound) {
-              LLMGateway.unavailableModelsSet.add(targetModel);
-              allModelsRateLimitedOnKey = false;
-              logger.warn(`[LLM Gateway Model 404] Model ${targetModel} tidak tersedia/deprecated di Gemini API. Diskip permanen.`);
+              // BUG FIX 2: Scoped per-key 404 tracking with 45-minute TTL auto-expiration
+              const UNAVAIL_TTL_MS = 45 * 60 * 1000;
+              LLMGateway.unavailableModelsMap.set(`${keyId}::${targetModel}`, Date.now() + UNAVAIL_TTL_MS);
+              logger.warn(`[LLM Gateway Model 404] Model ${targetModel} tidak tersedia untuk key ${keyMasked} (404). Diskip sementara (TTL 45m).`);
               break; // Skip attempt 2 immediately!
             }
 
             if (isHighDemandOrUnavailable) {
-              allModelsRateLimitedOnKey = false;
               // Mark model globally in cooldown for 60s so other keys don't waste time hitting 503 on it
               LLMGateway.globalModelCooldownMap.set(targetModel, Date.now() + 60 * 1000);
               this.keyModelCooldownMap.set(kmKey, Date.now() + 60 * 1000);
@@ -970,7 +1023,6 @@ export class LLMGateway {
             }
 
             if (isTimeout) {
-              allModelsRateLimitedOnKey = false;
               // Put model in temporary 60s cooldown to prevent repeated slow calls
               this.keyModelCooldownMap.set(kmKey, Date.now() + 60 * 1000);
               logger.warn(`[LLM Gateway Timeout Failover] Model ${targetModel} timed out. Immediate failover to next model...`);
@@ -979,7 +1031,8 @@ export class LLMGateway {
 
             if (isRateLimitOrQuota) {
               this.metrics.rateLimitHits++;
-              consecutiveFailuresOnKey++;
+              rateLimitEncounteredOnKey = true;
+              consecutiveRateLimitsOnKey++;
               // Put this specific (key, model) in Fast-Failover cooldown for 90 seconds
               this.keyModelCooldownMap.set(kmKey, Date.now() + 90 * 1000);
               logger.warn(
@@ -987,7 +1040,7 @@ export class LLMGateway {
               );
               
               // If multiple models rate-limited on this key and other keys are available, jump directly to next key!
-              if (consecutiveFailuresOnKey >= 2 && kIdx < evaluatedKeyCandidates.length - 1) {
+              if (consecutiveRateLimitsOnKey >= 2 && kIdx < evaluatedKeyCandidates.length - 1) {
                 logger.info(`[LLM Gateway Fast Key Hop] Key ${keyMasked} kehabisan kuota pada beberapa model. Segera beralih ke API Key berikutnya (#${kIdx + 2}/${evaluatedKeyCandidates.length})...`);
                 break modelLoop;
               }
@@ -995,7 +1048,6 @@ export class LLMGateway {
             }
 
             if (isServerError) {
-              allModelsRateLimitedOnKey = false;
               if (modelAttempts < maxModelAttempts) {
                 // Exponential backoff with jitter before next retry on the same key
                 const jitter = Math.floor(Math.random() * 200) + 100;
@@ -1003,8 +1055,6 @@ export class LLMGateway {
                 logger.info(`[LLM Gateway Backoff] Waiting ${delay}ms before retrying model ${targetModel}...`);
                 await new Promise((resolve) => setTimeout(resolve, delay));
               }
-            } else {
-              allModelsRateLimitedOnKey = false;
             }
           }
         }
@@ -1019,8 +1069,9 @@ export class LLMGateway {
         continue keyCandidateLoop;
       }
 
-      // If all models failed with Rate Limit on this key, trip the circuit breaker on this key
-      if (!anyModelSucceededOnKey && allModelsRateLimitedOnKey) {
+      // BUG FIX 3: Only trip circuit breaker if rate limit error (429/quota) ACTUALLY occurred on this key
+      const isConfirmedRateLimited = !anyModelSucceededOnKey && rateLimitEncounteredOnKey && consecutiveRateLimitsOnKey >= Math.min(2, currentModelsToTry.length);
+      if (isConfirmedRateLimited) {
         this.metrics.circuitBreakerTrips++;
         const cooldownMs = 2.5 * 60 * 1000;
         keyState.status = 'rate_limited';
@@ -1028,7 +1079,7 @@ export class LLMGateway {
         keyState.lastErrorReason = 'All Models Rate Limited / Quota Exceeded (429)';
         this.recordRateLimitCooldown(activeKey, keyId, cooldownMs).catch(() => {});
         logger.warn(
-          `[LLM Gateway Circuit Breaker] All models rate-limited on ${keyMasked}. Isolated for 2.5 minutes.`
+          `[LLM Gateway Circuit Breaker] Rate-limit confirmed on key ${keyMasked}. Isolated for 2.5 minutes.`
         );
       }
     }
@@ -1097,7 +1148,8 @@ export class LLMGateway {
       const found = keys.find((k: any) => k.key === key || k.id === keyId);
       if (found) {
         found.cooldownUntil = Date.now() + cooldownMs;
-        found.status = 'active';
+        // BUG FIX 4: Set status to 'rate_limited' (NOT 'active') during cooldown
+        found.status = 'rate_limited';
         await dbSaveApiKeys(keys);
         this.emitEvent({ type: 'apikeys_updated', keys });
       }

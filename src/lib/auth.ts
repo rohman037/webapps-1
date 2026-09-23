@@ -41,6 +41,7 @@ export interface UserSession {
   name?: string;
   email?: string;
   loginTime: number;
+  expiryDate?: string;
 }
 
 export interface AccessCodeItem {
@@ -52,15 +53,12 @@ export interface AccessCodeItem {
 const STORAGE_SESSION_KEY = 'satset_user_session';
 const STORAGE_CODES_KEY = 'satset_valid_access_codes';
 
-// Default user access codes
-const DEFAULT_ACCESS_CODES: AccessCodeItem[] = [
-  { code: 'SATSET-ULTRA-VIP', note: 'Paket Ultra VIP Lifetime', createdAt: Date.now() },
-  { code: 'PROMPT-SATSET-888', note: 'Akses Tester VIP', createdAt: Date.now() },
-];
+// Default user access codes (Strictly empty in production; all access codes must originate from database)
+const DEFAULT_ACCESS_CODES: AccessCodeItem[] = [];
 
 export function getAccessCodes(): AccessCodeItem[] {
   if (typeof localStorage === 'undefined') {
-    return DEFAULT_ACCESS_CODES;
+    return [];
   }
   try {
     const raw = localStorage.getItem(STORAGE_CODES_KEY);
@@ -73,9 +71,7 @@ export function getAccessCodes(): AccessCodeItem[] {
   } catch (err) {
     // console.error('Gagal membaca kode akses dari localStorage', err);
   }
-  // Save default codes if first time
-  saveAccessCodes(DEFAULT_ACCESS_CODES);
-  return DEFAULT_ACCESS_CODES;
+  return [];
 }
 
 export function saveAccessCodes(codes: AccessCodeItem[]) {
@@ -173,16 +169,19 @@ export function verifyAccessCode(input: string): { success: boolean; role?: 'adm
 
   if (foundClient) {
     const clientStatus = foundClient.status;
+    const now = Date.now();
+    const expiry = foundClient.expiryDate ? new Date(foundClient.expiryDate).getTime() : 0;
+
     if (clientStatus === 'suspended') {
       return {
         success: false,
         error: 'Akses Anda saat ini ditangguhkan. Silakan hubungi administrator.',
       };
     }
-    if (clientStatus === 'expired') {
+    if (clientStatus === 'expired' || (expiry > 0 && expiry <= now)) {
       return {
         success: false,
-        error: 'Masa aktif kode akses telah kedaluwarsa. Silakan perpanjang paket Anda.',
+        error: 'Masa aktif kode akses Anda telah habis/kedaluwarsa (30 hari). Silakan hubungi admin untuk perpanjang paket.',
       };
     }
     return {
@@ -267,14 +266,56 @@ export function getUserSession(): UserSession | null {
     if (raw) {
       const session: UserSession = JSON.parse(raw);
       if (session && session.code) {
-        // Dynamic client name lookup
-        const clients = getClients();
-        const foundClient = clients.find((c) => c.accessCode.toUpperCase() === session.code.toUpperCase());
-        if (foundClient && foundClient.name) {
-          session.name = foundClient.name;
-        } else if (session.role === 'admin') {
+        if (session.code === 'GUEST-ACCESS') {
+          return null;
+        }
+
+        // Admin sessions are authenticated
+        if (session.role === 'admin') {
           session.name = session.name || 'Administrator';
-        } else if (!session.name) {
+          return session;
+        }
+
+        // Client lookup with strict timestamp audit
+        const clients = getClients();
+        const foundClient = clients.find(
+          (c) => c.accessCode && c.accessCode.toUpperCase() === session.code.toUpperCase()
+        );
+
+        if (foundClient) {
+          const now = Date.now();
+          const expiry = foundClient.expiryDate ? new Date(foundClient.expiryDate).getTime() : 0;
+          
+          // Verify timestamp comparison against current date
+          if (
+            foundClient.status === 'suspended' ||
+            foundClient.status === 'expired' ||
+            (expiry > 0 && !isNaN(expiry) && expiry <= now)
+          ) {
+            // Strictly revoke and purge expired/suspended user session
+            localStorage.removeItem(STORAGE_SESSION_KEY);
+            return null;
+          }
+
+          if (foundClient.name) {
+            session.name = foundClient.name;
+          }
+          if (foundClient.expiryDate) {
+            session.expiryDate = foundClient.expiryDate;
+          }
+          return session;
+        }
+
+        // If session has an explicit expiryDate property, verify against current timestamp
+        if (session.expiryDate) {
+          const expTime = new Date(session.expiryDate).getTime();
+          if (!isNaN(expTime) && expTime <= Date.now()) {
+            localStorage.removeItem(STORAGE_SESSION_KEY);
+            return null;
+          }
+        }
+
+        if (!session.name) {
           session.name = 'Klien Satset';
         }
         return session;

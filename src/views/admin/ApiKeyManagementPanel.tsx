@@ -275,7 +275,20 @@ export default function ApiKeyManagementPanel() {
   const safeKeys = Array.isArray(apiKeys) ? apiKeys : [];
   const safeLogs = Array.isArray(logs) ? logs : [];
 
-  const activeKeysCount = safeKeys.filter((k) => k.status === 'active').length;
+  // BUG FIX 4: Accurate activeKeysCount and cooldown badge calculation
+  const now = Date.now();
+  const isKeyEffectivelyActive = (k: ApiKeyItem) => {
+    if (k.status === 'revoked' || (k.status as any) === 'disabled' || (k.status as any) === 'expired') return false;
+    const isCoolingDown = Boolean(k.cooldownUntil && k.cooldownUntil > now);
+    if (isCoolingDown) return false;
+    return k.status === 'active' || k.status === 'rate_limited';
+  };
+
+  const activeKeysCount = safeKeys.filter(isKeyEffectivelyActive).length;
+  const cooldownKeysCount = safeKeys.filter((k) => {
+    if (k.status === 'revoked' || (k.status as any) === 'disabled') return false;
+    return Boolean(k.cooldownUntil && k.cooldownUntil > now);
+  }).length;
   const totalDailyRequests = safeKeys.reduce((acc, k) => acc + (k.dailyUsage || 0), 0);
   const totalLogsCount = safeLogs.length;
   const rateLimitedCount = safeLogs.filter((l) => l.status === 'rate_limited').length;
@@ -547,6 +560,8 @@ export default function ApiKeyManagementPanel() {
         const mStatus = item.modelStatus || {};
         const hasRateLimit = Object.values(mStatus).some((s) => s === 'rate_limited');
         const hasDead = Object.values(mStatus).some((s) => s === 'dead') || item.status === 'revoked';
+        const isCoolingDown = Boolean(item.cooldownUntil && item.cooldownUntil > Date.now());
+        const remainingSec = isCoolingDown ? Math.max(1, Math.round(((item.cooldownUntil || 0) - Date.now()) / 1000)) : 0;
 
         return (
           <div className="space-y-1 min-w-[130px]">
@@ -554,12 +569,16 @@ export default function ApiKeyManagementPanel() {
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
                 item.status === 'revoked' || hasDead
                   ? 'bg-rose-50 text-rose-700 border-rose-200'
+                  : isCoolingDown
+                  ? 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
                   : hasRateLimit
                   ? 'bg-amber-50 text-amber-700 border-amber-200'
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200'
               }`}>
                 {item.status === 'revoked' || hasDead
                   ? '🔴 Nonaktif'
+                  : isCoolingDown
+                  ? `⏳ Cooldown (${remainingSec}s)`
                   : hasRateLimit
                   ? '🟡 Limited / Cascaded'
                   : '🟢 Siap (Ready)'}
@@ -726,7 +745,7 @@ export default function ApiKeyManagementPanel() {
         <StatCard
           title="Active API Keys"
           value={`${activeKeysCount} Key`}
-          subtext="Rotasi pool & user key aktif"
+          subtext={cooldownKeysCount > 0 ? `${cooldownKeysCount} key sedang cooldown (auto-lift)` : 'Rotasi pool & user key aktif'}
           badge={{ text: 'Real-time Pool', type: 'success' }}
           icon={<Key className="w-4 h-4" />}
           iconBgColor="bg-indigo-50 border-indigo-100"

@@ -2,12 +2,13 @@ import crypto from 'crypto';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS } from '@/server/core/state/serverState';
 import { normalizeGeminiModel } from '@/server/core/llm/routing/modelRouter';
-import { runStructuredPromptArchitect, isStructureSchemaConsistent } from './agents/prompt-architect';
 import { logger } from '@/server/core/utils/logger';
 
 export interface GeneratePhotoPromptOptions {
   mimeType: string;
   base64Data: string;
+  subjectReference?: string;
+  productReference?: string;
   model?: string;
   targetGenerator?: string;
   photoStyle?: string;
@@ -28,6 +29,8 @@ export async function generatePhotoPromptService(options: GeneratePhotoPromptOpt
   const {
     mimeType,
     base64Data,
+    subjectReference,
+    productReference,
     model,
     targetGenerator = 'nanobananapro',
     photoStyle = 'commercial',
@@ -53,7 +56,7 @@ export async function generatePhotoPromptService(options: GeneratePhotoPromptOpt
 
   if (useCache) {
     const cacheModelId = userSelectedModel || 'auto_routed';
-    const cacheInput = `photo_${mimeType}_${base64Data.slice(0, 500)}_${base64Data.length}_${cacheModelId}_${targetGenerator}_${photoStyle}_${aspectRatio}_${negativePrompt || ''}_${referenceImageBase64 ? referenceImageBase64.slice(0, 500) : ''}`;
+    const cacheInput = `photo_${mimeType}_${base64Data.slice(0, 500)}_${base64Data.length}_${cacheModelId}_${targetGenerator}_${photoStyle}_${aspectRatio}_${negativePrompt || ''}_${subjectReference || ''}_${productReference || ''}_${referenceImageBase64 ? referenceImageBase64.slice(0, 500) : ''}`;
     const cacheKey = crypto.createHash('sha256').update(cacheInput).digest('hex');
     const cached = promptResponseCache.get(cacheKey);
 
@@ -63,84 +66,97 @@ export async function generatePhotoPromptService(options: GeneratePhotoPromptOpt
         prompt: cached.text,
         modelUsed: cached.modelUsed,
         tierUsed: (cached as any).tierUsed || 'cached',
-        promptArchitect: cached.promptArchitect,
         cached: true,
       };
     }
   }
 
-  const promptText = `Anda adalah Master Director of Photography (DoP) Sinematik Global, Ahli Algoritma Visual TikTok FYP, dan Spesialis Multimodal Google SEO / AEO (Answer Engine Optimization) & Entity Search.
+  const promptText = `Anda adalah Master Unified Photo Prompt & Identity Architect AI (Director of Photography, TikTok Visual Hook Strategist, Multimodal Google AEO Entity Specialist, dan Consistency Guard).
 
-TUGAS UTAMA:
-Analisis secara SUPER PRESISI input gambar atau teks konsep dari pengguna, lalu transformasikan menjadi Master Prompt AI Image Generator (Midjourney v6.1 / Flux.1 / DALL-E 3) yang memiliki RELEVANSI TINGGI, REKAYASA SCENE MENDALAM, VISUAL HOOK TIKTOK KUAT, dan MEMENUHI STANDAR MULTIMODAL GOOGLE SEARCH / AEO TERBARU.
+MANDAT UTAMA ANDA:
+Lakukan penalaran multimodal end-to-end tingkat tinggi (High Agentic Reasoning) dalam SATU KALI EKSEKUSI CERDAS untuk mentransformasikan input konsep/script video/gambar menjadi Prompt Foto AI Ultra-HD Fotorealistik (Midjourney v6.1 / Flux.1 / Nano Banana Pro / DALL-E 3).
 
-DETEKSI MODE INPUT:
-1. JIKA INPUT BERISI RINCIAN MULTI-KLIP SEKALIGUS (MULTI-CLIP / BATCH SCENE BREAKDOWN):
-   (Contoh: Naskah TikTok Shop, Ide Konten, atau Video to Prompt dengan klip 1 s/d N seperti [00:00 - 00:10] Klip 1, Klip 2, Klip 3, dst.):
-   - ATURAN JUMLAH KLIP (WAJIB & STRICT): Jika di input ada N klip (misal 3 klip), Anda WAJIB menghasilkan TEPAT N prompt foto terpisah (Klip 1, Klip 2, s/d Klip N). Jangan kurangi dan jangan gabungkan!
-   - ATURAN KONEKTIVITAS & KESELARASAN NASKAH VIDEO (STORYLINE & SCRIPT CONTINUITY):
-     * Setiap prompt foto per klip harus selaras 100% dengan naskah adegan dan voice-over video pada klip tersebut (Klip 1 = Hook awal visual, Klip 2 = Eksplorasi masalah/fitur/demo produk, Klip 3 = Solusi/CTA/Closing).
-     * Seluruh prompt foto (Klip 1, 2, 3...) WAJIB SALING TERHUBUNG (CONNECTED):
-       1. Konsistensi Karakter & Talent: Wajah, etnisitas, warna & model rambut, usia, dan ciri fisik subjek HARUS 100% IDENTIK dan disebutkan secara konsisten di semua prompt klip.
-       2. Konsistensi Busana & Wardrobe: Pakaian, warna baju, aksesoris, sepatu, dan gaya busana HARUS SAMA & KONSISTEN di setiap prompt klip.
-       3. Konsistensi Produk & Packaging: Bentuk produk, warna, label, dan tekstur produk HARUS SAMA PERSIS di setiap klip.
-       4. Kesatuan Sinematografi: Palet warna ambient dan gaya pencahayaan menyatu harmonis antar klip.
-   - Gunakan format header klip: "### 🎬 KLIP [X] ([TIMESTAMP]) — [JUDUL / FOKUS ADEGAN]" untuk setiap klip.
-   - Setiap klip memiliki blok prompt code (\`\`\`text ... \`\`\`) yang berdiri sendiri, lengkap dengan target aspect ratio ${aspectRatio} --style raw --v 6.1, dan SIAP SALIN (1-click copy).
+EMPAT TAHAP PENALARAN AGENTIC DALAM SATU PASS:
+1. TAHAP 1 (KONTEKS & EKSTRAKSI ENTITAS MENDALAM):
+   - Pahami secara menyeluruh konteks naskah, apakah berasal dari ide konten, video-to-prompt, replika video viral, product-to-video, atau input custom.
+   - Identifikasi hook visual 3 detik pertama, alur cerita, emosi, dan setting lingkungan.
 
-2. JIKA INPUT BERUPA SATU KONSEP TUNGGAL / SINGLE PHOTO:
-   - Bedah secara semantik seluruh konteks cerita, subjek inti, aktivitas, lokasi spesifik, mood emosional, dan detail prop.
-   - Terapkan pemetaan entitas (Google AEO): sebutkan material nyata, nama arsitektur/setting, dan kondisi atmosfer yang jelas.
-   - Bangun visual hook 3-detik pertama untuk TikTok.
+2. TAHAP 2 (LOCKING SUBJECT & PRODUCT REFERENCE — ZERO-FLICKER & ANTI-MORPHING):
+   - KUNCI IDENTITAS KARAKTER (SUBJECT REFERENCE):
+     * Definisikan biometrik subjek yang sangat spesifik dan permanen: gender, usia spesifik, etnisitas/ras, bentuk wajah, warna kulit & mikro-pori-pori, model & warna rambut, serta detail busana/pakaian (bahan, warna, gaya).
+     * ${subjectReference ? `User telah memberikan Subject Reference spesifik: "${subjectReference}". ANDA WAJIB MENGGUNAKAN & MENGUNCI IDENTITAS INI SECARA MUTLAK.` : 'Jika tidak diberikan spesifik oleh user, simpulkan dari konteks dan KUNCI satu set karakter biometrik & busana secara permanen.'}
+     * Di semua klip/prompt, subjek HARUS MEMILIKI ANCHOR IDENTITAS YANG IDENTIK (ANTI-FLICKER saat di-render).
+   - KUNCI IDENTITAS PRODUK (PRODUCT REFERENCE):
+     * Definisikan spesifikasi fisik produk: nama produk, bentuk/dimensi, material permukaan (misal: frosted glass, brushed matte aluminum, glossy acrylic), warna pantone, detail tutup/wadah, dan letak label kemasan.
+     * ${productReference ? `User telah memberikan Product Reference spesifik: "${productReference}". ANDA WAJIB MENGGUNAKAN & MENGUNCI SPESIFIKASI PRODUK INI SECARA MUTLAK.` : 'Jika ada produk dalam konteks, KUNCI bentuk, material, dan warna produk tersebut secara konsisten.'}
+     * Di semua klip/prompt, produk HARUS MEMILIKI ANCHOR YANG 100% SAMA (ZERO-MORPHING).
 
-3. JIKA INPUT BERUPA FOTO REFERENSI (IMAGE):
-   - Lakukan dekonstruksi visual mendalam: identifikasi anatomi wajah, gaya rambut, busana, sudut kamera, arah & temperatur cahaya, palet warna, dan latar belakang.
-   - Pertahankan identitas visual dan esensi komposisi referensi dengan resolusi sinematik 8K dan tekstur fotorealistik murni.
+3. TAHAP 3 (FISIKA OPTIK KAMERA, PENCAHAYAAN & KOMPOSISI):
+   - Terapkan parameter kamera nyata: Kamera premium (Hasselblad H6D-100c / Sony A7R V / Arri Alexa 65), lensa prima (85mm f/1.2 untuk portrait, 35mm f/1.4 untuk lifestyle/scene), shallow depth of field, creamy bokeh, natural eye-level/cinematic angle.
+   - Pencahayaan fotorealistik: Arah key light yang jelas, softbox diffusion, subtle rim light, pantulan bayangan ray-traced nyata, temperatur warna Kelvin yang sesuai mood.
 
-PARAMETER TEKNIS FOTOGRAFI WAJIB:
-- Tipe Kamera & Lensa: (Contoh: Shot on Hasselblad H6D-100c / Sony A7R V / Arri Alexa LF, Zeiss Master Prime 85mm f/1.2 atau 35mm f/1.4).
-- Pencahayaan: (Contoh: Volumetric golden hour side lighting, softbox diffusion at 45 degrees, subtle blue rim lighting, ray-traced reflections).
-- Detail Tekstur: (Contoh: Ultra-detailed skin texture, authentic fabric weave, natural specular reflections, sharp edge definition).
-- Target Aspect Ratio: ${aspectRatio}
-- Preset Gaya: ${photoStyle.toUpperCase()}
+4. TAHAP 4 (PROPAGASI MULTI-KLIP & FORMATTING SIAP SALIN):
+   - JIKA INPUT MULTI-KLIP (BATCH SCENE BREAKDOWN):
+     * Wajib menghasilkan TEPAT N prompt foto terpisah untuk setiap klip (Klip 1 s/d Klip N). Jangan kurangi!
+     * Format header: "### 🎬 KLIP [X] ([TIMESTAMP]) — [JUDUL / FOKUS ADEGAN]".
+     * Setiap klip memiliki blok prompt code (\`\`\`text ... \`\`\`) yang berdiri sendiri dan SIAP SALIN 1-KLIK.
+     * Di setiap klip, tag [Subject Reference] dan [Product Reference] HARUS IDENTIK & TERKUNCI, sementara [Action & Dynamic Posing] serta [Scene Context] bertransisi dinamis mengikuti naskah.
+   - JIKA INPUT SINGLE CONCEPT:
+     * Buat satu master prompt lengkap dengan struktur tag yang kaya dan presisi tinggi.
 
-FORMAT OUTPUT:
+STRUKTUR BLOK PROMPT WAJIB (JANGAN MENGUBAH NAMA TAG UTAMA AGAR TETAP KOMPATIBEL):
+\`\`\`text
+[Master Shot]: Hyper-realistic ${photoStyle} photography, TikTok FYP visual hook aesthetic, Google AEO high-relevance semantic framing.
+[Subject Reference (Anti-Flicker)]: [Biometrik lengkap: gender, usia spesifik, etnisitas, struktur wajah, model & warna rambut, detail bahan pakaian & warna yang terkunci konsisten].
+[Product Reference (Zero-Morphing)]: [Spesifikasi fisik produk: bentuk kemasan, material finishing, warna, detail label & prop yang terkunci konsisten].
+[Action & Dynamic Posing]: [Aksi natural interaksi subjek terhadap produk/lingkungan pada adegan ini, gestur tangan, arah pandangan mata (eyeline match)].
+[Scene Context & Environment]: [Latar belakang lokasi spasial yang kaya entitas, detail interior/eksterior, kedalaman ruang sinematik].
+[Lighting & Atmospheric Physics]: [Setup pencahayaan presisi: arah key light, soft fill, subtle edge rim light, temperatur warna, bayangan volumetrik realistis].
+[Camera, Optics & Composition]: [Bodi kamera profesional, lensa (focal length), aperture f-stop lebar, sudut pengambilan gambar, depth of field murni].
+[Texture & Rendering Quality]: 8k UHD resolution, raw authentic documentary photograph, realistic micro skin pores, fabric threading, zero artificial airbrushing, photorealistic raytraced reflections, ${aspectRatio} --style raw --v 6.1
+\`\`\`
+
+FORMAT KESELURUHAN OUTPUT:
 JIKA SINGLE PROMPT:
 ### 📸 TIKTOK-OPTIMIZED AI PROMPT (SUPER REALISTIS & SIAP COPY)
 \`\`\`text
-[Master Shot]: Hyper-realistic ${photoStyle} photography, TikTok FYP visual hook aesthetic, Google AEO high-relevance semantic framing.
-[Subject & Identity]: [Deskripsi super spesifik subjek: usia, fitur wajah otentik, ekspresi mikro yang menarik perhatian, pose dinamis, busana & tekstur bahan detail].
-[Scene Context & Environment]: [Latar belakang storytelling kaya entitas, detail arsitektur/ruang, elemen pendukung, kedalaman spasial sinematik].
-[Lighting & Atmospheric Physics]: [Pencahayaan presisi: arah key light, soft fill, subtle rim light, temperatur warna ambient, volumetric rays, bayangan lembut].
-[Camera, Optics & Composition]: [Kamera profesional, panjang lensa (focal length), aperture f-stop ultra-lebar, fokus tajam pada subjek, natural optical depth of field / creamy bokeh].
+[Master Shot]: ...
+[Subject Reference (Anti-Flicker)]: ...
+[Product Reference (Zero-Morphing)]: ...
+[Action & Dynamic Posing]: ...
+[Scene Context & Environment]: ...
+[Lighting & Atmospheric Physics]: ...
+[Camera, Optics & Composition]: ...
 [Texture & Rendering Quality]: 8k UHD resolution, raw authentic documentary photo, natural micro skin pores, fabric threading, zero artificial airbrushing, photorealistic raytraced reflections, ${aspectRatio} --style raw --v 6.1
 \`\`\`
 
 ---
 
 ### 🔍 ANALISIS MENDALAM RELEVANSI SCENE & ALGORITMA
-- **🎯 Konteks Scene & Semantic Entity (Google SEO/AEO)**: [Penjelasan entitas subjek, lokasi, material].
-- **⚡ TikTok Visual Hook (3-Second Retention)**: [Analisis elemen visual utama].
-- **💡 Pencahayaan, Optik & Komposisi Kamera**: [Setup teknis].
-- **🎨 Color Grading & Tekstur Otentik**: [Palet warna sinematik].
+- **🎯 Anchor Karakter & Produk (Anti-Flicker)**: [Penjelasan spesifikasi biologis subjek dan fisik produk yang dikunci].
+- **⚡ TikTok Visual Hook & Retention**: [Elemen visual 3 detik pertama yang menghentikan scroll].
+- **💡 Setup Pencahayaan, Optik & Komposisi**: [Spesifikasi teknis kamera, lensa, dan lighting].
+- **🎨 Color Grading & Tekstur Realistis**: [Palet warna dan detail material].
 
 JIKA MULTI-KLIP (BATCH CLIPS):
 ### 🎬 KLIP 1 (00:00 - 00:10) — [HOOK VISUAL PEMBUKA]
 \`\`\`text
-[Master Shot]: Hyper-realistic ${photoStyle} photography, TikTok hook scene 1, [Deskripsi adegan visual klip 1 sesuai script]...
-[Subject & Identity]: [Deskripsi subjek / talent spesifik, wajah, rambut, postur tubuh, busana/wardrobe lengkap]...
-[Scene Context & Environment]: [Setting lokasi klip 1, supermarket/toko/kamar/jalanan sesuai naskah]...
-[Lighting & Physics]: [Key light, soft volumetric ambient, natural shadows]...
-[Camera & Optics]: [Lensa, focal length, angle kamera]...
-[Texture & Quality]: 8k UHD resolution, photorealistic micro details, ${aspectRatio} --style raw --v 6.1
+[Master Shot]: ...
+[Subject Reference (Anti-Flicker)]: ...
+[Product Reference (Zero-Morphing)]: ...
+[Action & Dynamic Posing]: ...
+[Scene Context & Environment]: ...
+[Lighting & Atmospheric Physics]: ...
+[Camera, Optics & Composition]: ...
+[Texture & Rendering Quality]: 8k UHD resolution, photorealistic micro details, ${aspectRatio} --style raw --v 6.1
 \`\`\`
 
 ---
 
 ### 🔍 ANALISIS MENDALAM RELEVANSI KONTEN & KONSISTENSI VISUAL BATCH
-- **🎯 Konsistensi Karakter & Produk**: [Penjelasan bagaimana identitas subjek, pakaian, dan produk dijaga 100% konsisten dari klip 1 hingga klip akhir].
-- **⚡ Keselarasan Naskah & Visual Hook**: [Bagaimana setiap prompt foto menguatkan cerita naskah video dari hook awal hingga CTA].
-- **💡 Rekomendasi Prompt Generator**: [Saran model gambar terbaik seperti Midjourney v6.1, Flux.1, atau Ideogram v2].`;
+- **🎯 Konsistensi Subjek & Produk (Anti-Flicker)**: [Penjelasan bagaimana Subject Reference dan Product Reference dikunci 100% konsisten dari klip awal hingga akhir].
+- **⚡ Keselarasan Naskah & Visual Hook**: [Bagaimana visual tiap klip memperkuat alur cerita naskah].
+- **💡 Rekomendasi Generator**: [Model gambar terbaik yang direkomendasikan seperti Midjourney v6.1, Flux.1, atau Nano Banana Pro].`;
 
   let extendedPromptText = promptText;
   if (negativePrompt && negativePrompt.trim()) {
@@ -152,14 +168,23 @@ JIKA MULTI-KLIP (BATCH CLIPS):
       parts: []
     },
     config: {
-      systemInstruction: "You are the world's leading Director of Photography, TikTok Visual Hook Strategist, and Google AEO Multimodal SEO Specialist. Generate highly precise, hyper-realistic AI image prompts with deep scene comprehension, authentic camera physics, and complete visual algorithm compliance.",
+      systemInstruction: "You are the world's leading Master Photo Prompt & Identity Architect AI. In a SINGLE unified pass with deep reasoning, generate hyper-realistic AI image prompts with locked Subject and Product Reference anchors (zero-flicker / anti-morphing), authentic camera physics, and complete visual algorithm compliance.",
     }
   };
 
   if (mimeType === 'text/plain') {
     const rawUserText = Buffer.from(base64Data, 'base64').toString('utf-8');
+    let userContextBlock = `BERIKUT DESKRIPSI / KONSEP FOTO INPUT:\n"""\n${rawUserText}\n"""\n`;
+    
+    if (subjectReference && subjectReference.trim()) {
+      userContextBlock += `\n📌 SPESIFIKASI SUBJECT REFERENCE (KUNCI IDENTITAS KARAKTER):\n"${subjectReference.trim()}"\n`;
+    }
+    if (productReference && productReference.trim()) {
+      userContextBlock += `\n📌 SPESIFIKASI PRODUCT REFERENCE (KUNCI IDENTITAS PRODUK):\n"${productReference.trim()}"\n`;
+    }
+
     promptPayload.contents.parts.push({
-      text: `BERIKUT DESKRIPSI / KONSEP FOTO INPUT DARI USER:\n"""\n${rawUserText}\n"""\n\nTUGAS UTAMA ANDA:\n${extendedPromptText}`
+      text: `${userContextBlock}\n\nTUGAS UTAMA ANDA:\n${extendedPromptText}`
     });
 
     if (referenceImageBase64 && referenceImageMimeType) {
@@ -180,8 +205,17 @@ JIKA MULTI-KLIP (BATCH CLIPS):
         data: base64Data,
       },
     });
+
+    let extraRefText = extendedPromptText;
+    if (subjectReference && subjectReference.trim()) {
+      extraRefText = `📌 SPESIFIKASI SUBJECT REFERENCE DARI USER: "${subjectReference.trim()}"\n\n` + extraRefText;
+    }
+    if (productReference && productReference.trim()) {
+      extraRefText = `📌 SPESIFIKASI PRODUCT REFERENCE DARI USER: "${productReference.trim()}"\n\n` + extraRefText;
+    }
+
     promptPayload.contents.parts.push({
-      text: extendedPromptText,
+      text: extraRefText,
     });
   }
 
@@ -201,6 +235,7 @@ JIKA MULTI-KLIP (BATCH CLIPS):
   const photoTargetTier = (hasImageMedia || isUltraMode) ? 'flagship' : 'tier2';
   const photoToolName = isUltraMode ? 'Photo Prompt Ultra' : 'Photo Prompt';
 
+  // EXACTLY 1 SINGLE LLM / API CALL with deep agentic reasoning
   const result = await callGeminiWithFallback(
     userSelectedModel,
     promptPayload,
@@ -212,34 +247,16 @@ JIKA MULTI-KLIP (BATCH CLIPS):
     '/api/generate-photo-prompt'
   );
 
-  let finalPromptText = result.text;
-  let architectMetadata: any = undefined;
-
-  try {
-    const architectResult = await runStructuredPromptArchitect(
-      result.text,
-      targetGenerator || photoStyle || 'general'
-    );
-    architectMetadata = architectResult;
-
-    if (architectResult.isOptimized && isStructureSchemaConsistent(result.text, architectResult.finalPrompt)) {
-      finalPromptText = architectResult.finalPrompt;
-    } else if (architectResult.isOptimized) {
-      logger.warn('[StructuredPromptArchitect] Photo prompt output failed structural schema consistency check, falling back to raw model draft.');
-    }
-  } catch (archErr) {
-    logger.warn('[StructuredPromptArchitect] Photo prompt enhancement notice:', archErr);
-  }
+  const finalPromptText = result.text;
 
   if (useCache) {
     const cacheModelId = userSelectedModel || 'auto_routed';
-    const cacheInput = `photo_${mimeType}_${base64Data.slice(0, 500)}_${base64Data.length}_${cacheModelId}_${targetGenerator}_${photoStyle}_${aspectRatio}_${negativePrompt || ''}_${referenceImageBase64 ? referenceImageBase64.slice(0, 500) : ''}`;
+    const cacheInput = `photo_${mimeType}_${base64Data.slice(0, 500)}_${base64Data.length}_${cacheModelId}_${targetGenerator}_${photoStyle}_${aspectRatio}_${negativePrompt || ''}_${subjectReference || ''}_${productReference || ''}_${referenceImageBase64 ? referenceImageBase64.slice(0, 500) : ''}`;
     const cacheKey = crypto.createHash('sha256').update(cacheInput).digest('hex');
     promptResponseCache.set(cacheKey, {
       timestamp: Date.now(),
       text: finalPromptText,
       modelUsed: result.modelUsed,
-      promptArchitect: architectMetadata
     });
   }
 
@@ -249,6 +266,5 @@ JIKA MULTI-KLIP (BATCH CLIPS):
     tierUsed: result.tierUsed,
     latencyMs: result.latencyMs,
     keyMasked: result.keyMasked,
-    promptArchitect: architectMetadata,
   };
 }

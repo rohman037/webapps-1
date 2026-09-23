@@ -72,6 +72,8 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
   const [photoInitialAspectRatio, setPhotoInitialAspectRatio] = useState<string | undefined>();
   const [photoInitialPhotoStyle, setPhotoInitialPhotoStyle] = useState<string | undefined>();
   const [photoInitialTargetGenerator, setPhotoInitialTargetGenerator] = useState<string | undefined>();
+  const [photoInitialSubjectReference, setPhotoInitialSubjectReference] = useState<string | undefined>();
+  const [photoInitialProductReference, setPhotoInitialProductReference] = useState<string | undefined>();
 
   // States for passing data to ContentIdeasTool & Extractor
   const [ideasInitialVideo, setIdeasInitialVideo] = useState<File | null>(null);
@@ -237,6 +239,8 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
       aspectRatio?: string;
       photoStyle?: string;
       targetGenerator?: string;
+      subjectReference?: string;
+      productReference?: string;
     }
   ) => {
     setPhotoInitialText(text);
@@ -245,6 +249,8 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
     if (options?.aspectRatio !== undefined) setPhotoInitialAspectRatio(options.aspectRatio);
     if (options?.photoStyle !== undefined) setPhotoInitialPhotoStyle(options.photoStyle);
     if (options?.targetGenerator !== undefined) setPhotoInitialTargetGenerator(options.targetGenerator);
+    if (options?.subjectReference !== undefined) setPhotoInitialSubjectReference(options.subjectReference);
+    if (options?.productReference !== undefined) setPhotoInitialProductReference(options.productReference);
     setPhotoAutoGenerate(!!options?.autoGenerate);
     setActiveTab('photo');
   };
@@ -964,6 +970,8 @@ export default function UserLayout({ session, onLogout, onGoToAdmin }: UserLayou
               initialConcept={photoInitialText} 
               initialNegativePrompt={photoInitialNegativePrompt} 
               initialReferenceImage={photoInitialReferenceImage} 
+              initialSubjectReference={photoInitialSubjectReference}
+              initialProductReference={photoInitialProductReference}
               autoGenerate={photoAutoGenerate}
               initialAspectRatio={photoInitialAspectRatio}
               initialPhotoStyle={photoInitialPhotoStyle}

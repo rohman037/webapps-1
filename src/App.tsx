@@ -9,7 +9,7 @@ import { syncHistoryAsync } from './lib/history';
 import { useAuth } from './hooks/useAuth';
 
 export default function App() {
-  const { session, logout, refreshSession, setSession } = useAuth();
+  const { session, logout, refreshSession, setSession, isAuthenticated, isExpired, sessionAudit } = useAuth();
   
   useEffect(() => {
     // [REALTIME-FIX] Initialize central real-time sync (SSE Manager) & Cross-Tab Sync
@@ -23,6 +23,21 @@ export default function App() {
     };
   }, []);
 
+  // Diagnostic log for Router validation
+  useEffect(() => {
+    const expiredAt = sessionAudit?.expiryDateIso || session?.expiryDate || null;
+    const currentDate = new Date(Date.now()).toISOString();
+    console.log('[Router Auth Verification]', {
+      expiredAt,
+      currentDate,
+      isExpired,
+      isAuthenticated,
+      hasSession: Boolean(session),
+      code: session?.code || null,
+      role: session?.role || null,
+    });
+  }, [session, isAuthenticated, isExpired, sessionAudit]);
+
   const [publicView, setPublicView] = useState<'login' | 'pricing'>('login');
   const [adminViewMode, setAdminViewMode] = useState<'admin_dashboard' | 'workspace'>('admin_dashboard');
 
@@ -31,8 +46,8 @@ export default function App() {
     setPublicView('login');
   };
 
-  // Proteksi: Jika belum ada session resmi atau terdeteksi guest access, render tampilan publik
-  if (!session || session.code === 'GUEST-ACCESS') {
+  // Proteksi Rute: Jika belum ada session resmi, kedaluwarsa, atau guest access, selalu render tampilan publik
+  if (!session || !isAuthenticated || isExpired || session.code === 'GUEST-ACCESS') {
     if (publicView === 'pricing') {
       return (
         <div className="min-h-screen bg-[#fcf8ff] p-4 sm:p-8">

@@ -15,10 +15,10 @@ CRITICAL OUTPUT STRUCTURE
 - **Lighting & Mood**: [skema pencahayaan, kontras, atmosfer emosional]
 
 ## 📋 CAPTION SEO TIKTOK / REELS / SHORTS
-[Caption 5 kalimat: hook masalah, benefit produk, use case spesifik, personal story/social proof, CTA jelas]
+[Caption 3-5 kalimat berkonversi & relevansi produk/konten tinggi: Hook masalah/keinginan audiens → Sebutkan nama/tipe produk atau objek utama dan keunggulannya → Manfaat nyata & use case → CTA jelas dan natural]
 
 ## # HASHTAG
-[5 hashtag: 1 broad + 2 niche + 2 long-tail, format: #tag1 #tag2 #tag3 #tag4 #tag5]
+[5 hashtag dengan 100% RELEVANSI PRODUK & TOPIK TINGGI: 1 Nama Produk/Objek + 2 Kategori/Niche Spesifik + 1 Manfaat/Solusi + 1 Search Intent Belanja/Edukasi. DILARANG: #fyp, #viral, #foryou, #trending, #tiktok, #masukberanda]
 
 ## 🎞️ BREAKDOWN PER SEGMEN
 
@@ -97,13 +97,14 @@ CRITICAL PRINCIPLES
    - Jika keduanya ada → tulis keduanya
    - Gunakan tanda kutip untuk narasi
 
-6. CAPTION SEO
-   - 5 kalimat padat bernilai tinggi: hook masalah, demonstrasi benefit, use case spesifik, personal touch / social proof, Call To Action jelas
+6. CAPTION RELEVANSI PRODUK TINGGI
+   - 3-5 kalimat padat bernilai tinggi: hook masalah/keinginan konsumen, sebutkan nama/tipe produk dan fitur unggulannya, demonstrasi use case nyata, dan Call To Action jelas
    - Kalimat pertama harus hook yang memikat perhatian dalam 1 detik
    - Kalimat terakhir harus CTA yang jelas mengarahkan ke keranjang kuning / profil / kolom komentar
 
-7. HASHTAG (5 buah)
-   - Tepat 5 buah hashtag teroptimasi: 1 broad + 2 niche + 2 long-tail
+7. HASHTAG RELEVANSI PRODUK TINGGI (5 buah)
+   - Tepat 5 buah hashtag 100% spesifik terhadap produk/objek video: 1 Brand/Product Tag + 2 Category/Niche Tags + 1 Benefit/Problem Tag + 1 Buyer Intent Tag
+   - DILARANG KERAS menggunakan hashtag generik/spam (#fyp, #viral, #foryou, #trending, #tiktok, #masukberanda, #explore, #reels)
    - Format: #hashtag tanpa spasi antar karakter
 
 8. MASTER PROMPT

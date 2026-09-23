@@ -2,6 +2,11 @@ import crypto from 'crypto';
 import { callGeminiWithFallback } from '@/server/core/llm/geminiGateway';
 import { promptResponseCache, PROMPT_CACHE_TTL_MS } from '@/server/core/state/serverState';
 import { logger } from '@/server/core/utils/logger';
+import {
+  cleanSubjectTitle,
+  cleanInlineHashtagsFromSentence,
+  generateProductRelevantHashtags,
+} from '@/server/core/utils/sanitizer';
 import { runVideoToPromptPipeline } from '@/server/workflows/video-to-prompt/service';
 
 export const VIDEO_PROMPT_SYSTEM_INSTRUCTION = `Analyze the supplied video once as a professional video reverse-engineering system.
@@ -277,13 +282,22 @@ export function partitionAndFormatStructuredAnalysis(
     lines.push('');
   }
 
-  // Caption & Hashtags
+  // Caption & Hashtags (High Relevance Engine)
+  const rawSubject = analysis.global?.productIdentity || analysis.global?.subjectIdentity || analysis.global?.style || 'Produk Pilihan';
+  const cleanSubject = cleanSubjectTitle(rawSubject);
+  const cleanCaption = cleanInlineHashtagsFromSentence(
+    analysis.caption ||
+      `Temukan solusi terbaik dengan ${cleanSubject}! Desain fungsional dengan kualitas optimal yang siap melengkapi kebutuhan harianmu. Simak detail lengkapnya dan dapatkan sekarang sebelum kehabisan.`
+  );
+  const relevantTags = generateProductRelevantHashtags(cleanSubject, analysis.global?.setting);
+  const hashtagsString = analysis.hashtags ? cleanInlineHashtagsFromSentence(analysis.hashtags) : relevantTags.join(' ');
+
   lines.push('### 📱 CAPTION & HASHTAG');
   lines.push('**Caption SEO:**');
-  lines.push(analysis.caption || `${analysis.global?.style || 'Video inspirasi'} yang memukau! Simak selengkapnya dan bagikan pendapatmu.`);
+  lines.push(cleanCaption);
   lines.push('');
   lines.push('**Hashtags:**');
-  lines.push(analysis.hashtags || '#fyp #video #viral #cinematic #trending');
+  lines.push(hashtagsString);
   lines.push('');
 
   const finalStructured: StructuredVideoAnalysis = {

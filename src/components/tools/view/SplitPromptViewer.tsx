@@ -235,25 +235,42 @@ export function extractTechnicalSummaryData(rawText: string): Record<string, str
 export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | null {
   if (!rawText) return null;
 
+  const sanitizeInlineTags = (text: string) => {
+    if (!text) return text;
+    // Strip inline #tags inside sentence body and convert them to readable text
+    return text.replace(/#([\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+)/g, (_match, tag) => {
+      return tag.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+    });
+  };
+
+  const BANNED_SPAM_SET = new Set([
+    '#fyp', '#fypシ', '#fypviral', '#foryou', '#foryoupage', '#foru', '#racuntiktok',
+    '#racuntiktokshop', '#viral', '#viralvideo', '#trending', '#trendingvideo',
+    '#beranda', '#masukberanda', '#fypindonesia', '#fyppage', '#viraltiktok', '#foryourpage',
+    '#xyzbca', '#explore', '#explorepage', '#reels', '#tiktok', '#tik_tok', '#trend', '#videoviral'
+  ]);
+
   const structured = extractStructuredData(rawText);
   if (structured && (structured.caption || structured.hashtags)) {
-    const cap = (structured.caption || '').trim();
+    let cap = sanitizeInlineTags((structured.caption || '').trim());
     let hash = '';
     if (Array.isArray(structured.hashtags)) {
       hash = structured.hashtags.join(' ');
     } else if (typeof structured.hashtags === 'string') {
       hash = structured.hashtags.trim();
     }
-    const tagMatches = hash.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g) || [];
-    const tagsList = tagMatches.slice(0, 5);
-    const combined = `${cap}\n\n${tagsList.join(' ')}`.trim();
+    const rawTagMatches = hash.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g) || [];
+    const tagsList = rawTagMatches
+      .filter((t) => !BANNED_SPAM_SET.has(t.toLowerCase()))
+      .slice(0, 5);
+
     return {
-      caption: combined,
+      caption: cap,
       hashtags: tagsList.join(' '),
       cleanCaptionWithoutTags: cap,
       tagsList,
-      charCount: combined.length,
-      wordCount: combined ? combined.split(/\s+/).filter(Boolean).length : 0,
+      charCount: cap.length,
+      wordCount: cap ? cap.split(/\s+/).filter(Boolean).length : 0,
     };
   }
 
@@ -281,20 +298,31 @@ export function parseSeoCaptionAndHashtags(rawText: string): SeoCaptionInfo | nu
   caption = caption.replace(/^>+\s*/gm, '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
   hashtags = hashtags.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
 
-  // If hashtags was captured in caption, split them cleanly
+  // If hashtags was captured at end of caption, split them cleanly
   if (!hashtags && caption.includes('#')) {
-    const hashIdx = caption.indexOf('#');
-    hashtags = caption.slice(hashIdx).trim();
-    caption = caption.slice(0, hashIdx).trim();
+    const hashIdx = caption.lastIndexOf('#');
+    const potentialHashtagBlock = caption.slice(hashIdx);
+    if (potentialHashtagBlock.match(/(?:#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+\s*){2,}/)) {
+      hashtags = caption.slice(hashIdx).trim();
+      caption = caption.slice(0, hashIdx).trim();
+    }
   }
+
+  // Remove any trailing block of hashtags that might be duplicate inside caption
+  caption = caption.replace(/(?:\n\s*#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+\s*)+$/gi, '').trim();
+
+  // Clean inline hashtags from sentences so there are NO stray # in the middle of sentences
+  caption = sanitizeInlineTags(caption).trim();
 
   let tagsList: string[] = [];
   if (hashtags) {
-    const tagList = hashtags.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g);
-    if (tagList) {
-      const filtered = tagList.slice(0, 5);
-      tagsList = filtered;
-      hashtags = filtered.join(' ');
+    const rawTagList = hashtags.match(/#[\w\u0590-\u05ff\u0600-\u06ff\u0e00-\u0e7f_]+/g);
+    if (rawTagList) {
+      const filtered = rawTagList
+        .filter((t) => !BANNED_SPAM_SET.has(t.toLowerCase()))
+        .slice(0, 5);
+      tagsList = filtered.length > 0 ? filtered : rawTagList.slice(0, 5);
+      hashtags = tagsList.join(' ');
     }
   }
 
@@ -1395,6 +1423,8 @@ export default function SplitPromptViewer({
               photoStyle: opts.photoStyle,
               targetGenerator: opts.targetGenerator,
               negativePrompt: opts.negativePrompt,
+              subjectReference: opts.subjectReference,
+              productReference: opts.productReference,
             });
             setIsBatchPhotoModalOpen(false);
           }}

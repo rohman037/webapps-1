@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { dbGetApiKeys, dbGetClients, dbGetTransactions, dbGetGrowthState } from '@/src/db/dbService';
+import { dbGetApiKeys, dbGetClients, dbSaveClient, dbGetTransactions, dbGetGrowthState, dbDeleteAccessCode, dbGetAccessCodes, dbAddAuditLog } from '@/src/db/dbService';
 import { runAutoAgentFactory } from '@/server/core/intelligence/agentAutoAgentFactory';
 import { analyzeUserGrowth } from '@/server/core/intelligence/agentUserGrowthAnalyst';
 import { optimizeCostAndTiers } from '@/server/core/intelligence/agentCostTierOptimizer';
@@ -8,13 +8,66 @@ import { logger } from '@/server/core/utils/logger';
 
 let cronInitialized = false;
 
+/**
+ * Scan all registered clients and automatically expire/deactivate codes
+ * that have passed their 30-day or custom validity period.
+ */
+export async function runClientExpiryAndQuotaCleanup() {
+  try {
+    const clients = await dbGetClients();
+    const now = Date.now();
+    let hasChanges = false;
+
+    for (const client of clients) {
+      if (client.status === 'suspended') continue;
+
+      const expiry = client.expiryDate ? new Date(client.expiryDate).getTime() : 0;
+      if (expiry > 0 && expiry <= now && client.status !== 'expired') {
+        client.status = 'expired';
+        await dbSaveClient(client);
+        hasChanges = true;
+
+        if (client.accessCode) {
+          await dbDeleteAccessCode(client.accessCode);
+        }
+
+        await dbAddAuditLog({
+          id: `audit_exp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          adminName: 'Sistem Auto-Expiry 24/7',
+          action: 'Masa Aktif Klien Kedaluwarsa',
+          details: `Masa aktif akun ${client.name || 'Klien'} (${client.accessCode}) telah habis pada ${new Date(client.expiryDate).toLocaleDateString('id-ID')}. Kode otomatis dinonaktifkan oleh sistem.`,
+          timestamp: new Date().toISOString(),
+          category: 'client',
+        });
+
+        logger.info(`[Auto-Expiry] Client "${client.name}" (${client.accessCode}) expired. Code revoked.`);
+      }
+    }
+
+    if (hasChanges) {
+      broadcastLiveEvent({ type: 'clients_updated', clients: await dbGetClients() });
+      broadcastLiveEvent({ type: 'access_codes_updated', accessCodes: await dbGetAccessCodes() });
+    }
+  } catch (err) {
+    logger.warn('[Auto-Expiry Cleaner] Error checking client expiration:', err);
+  }
+}
+
 export function initBackgroundSchedulers() {
   if (cronInitialized) return;
   cronInitialized = true;
 
   logger.info('[Server Schedulers] Initializing 24/7 autonomous agents cron jobs...');
 
-  // 1. Hourly Cost & Model Tier Optimizer (At minute 0)
+  // Run initial expiry cleanup on server startup
+  runClientExpiryAndQuotaCleanup();
+
+  // 1. Client Expiry & Quota Watcher (Every 10 minutes)
+  cron.schedule('*/10 * * * *', async () => {
+    await runClientExpiryAndQuotaCleanup();
+  });
+
+  // 2. Hourly Cost & Model Tier Optimizer (At minute 0)
   cron.schedule('0 * * * *', async () => {
     try {
       const keysArr = await dbGetApiKeys();
@@ -24,7 +77,7 @@ export function initBackgroundSchedulers() {
     }
   });
 
-  // 2. Daily User Growth Analyst Cron (00:00)
+  // 3. Daily User Growth Analyst Cron (00:00)
   cron.schedule('0 0 * * *', async () => {
     logger.info('[Server Cron 24/7] Running Daily User Growth Analyst...');
     try {
@@ -36,7 +89,7 @@ export function initBackgroundSchedulers() {
     }
   });
 
-  // 3. Daily Meta-Agent Auto-Factory Cron (00:05)
+  // 4. Daily Meta-Agent Auto-Factory Cron (00:05)
   cron.schedule('5 0 * * *', async () => {
     logger.info('[Server Cron 24/7] Running Daily Meta-Agent Auto-Factory...');
     try {
